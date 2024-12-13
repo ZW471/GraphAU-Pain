@@ -120,6 +120,11 @@ def UNBC_infolist(list):
     infostr = {'AU1: {:.2f} AU2: {:.2f} AU4: {:.2f}  AU6: {:.2f} AU9: {:.2f} AU12: {:.2f}  AU25: {:.2f} AU26: {:.2f} '.format(100.*list[0],100.*list[1],100.*list[2],100.*list[3],100.*list[4],100.*list[5],100.*list[6],100.*list[7])}
     return infostr
 
+def UNBC_pain_infolist(list):
+
+    infostr = {'No Pain: {:.2f} Mild Pain: {:.2f} Pain: {:.2f}'.format(100.*list[0],100.*list[1],100.*list[2])}
+    return infostr
+
 
 def adjust_learning_rate(optimizer, epoch, epochs, init_lr, iteration, num_iter):
 
@@ -238,6 +243,9 @@ class WeightedAsymmetricLoss(nn.Module):
 
     def forward(self, x, y):
 
+        # x = x[:, 2:]
+        # y = y[:, 2:]
+
         xs_pos = x
         xs_neg = 1 - x
 
@@ -255,6 +263,52 @@ class WeightedAsymmetricLoss(nn.Module):
 
         if self.weight is not None:
             loss = loss * self.weight.view(1,-1)
+            # loss = loss * self.weight[2:].view(1,-1)
 
         loss = loss.mean(dim=-1)
         return -loss.mean()
+
+class WeightedCrossEntropyLoss(nn.Module):
+    def __init__(self, eps=1e-8, disable_torch_grad=True, weight=None):
+        """
+        Weighted Cross-Entropy Loss for multi-class classification.
+
+        Args:
+            eps (float): Small constant to avoid log(0).
+            disable_torch_grad (bool): If True, torch gradient computations will be disabled (not typically needed for PyTorch loss functions).
+            weight (Tensor or None): Class weights. Tensor of shape [num_classes].
+        """
+        super(WeightedCrossEntropyLoss, self).__init__()
+        self.disable_torch_grad = disable_torch_grad
+        self.eps = eps
+        self.weight = weight
+
+    def forward(self, x, y):
+        """
+        Compute the weighted cross-entropy loss.
+
+        Args:
+            x (Tensor): Logits of shape [batch_size, num_classes].
+            y (Tensor): Ground truth labels of shape [batch_size, num_classes] (one-hot encoded).
+
+        Returns:
+            Tensor: Scalar loss value.
+        """
+        if self.weight is not None:
+            self.weight = self.weight.to(x.device)
+        # Apply softmax to logits to get class probabilities
+        probs = nn.functional.softmax(x, dim=-1).clamp(min=self.eps)
+
+        # Compute log probabilities
+        log_probs = torch.log(probs)
+
+        # Weighted cross-entropy loss
+        loss = -y * log_probs
+
+        if self.weight is not None:
+            # Apply class weights
+            loss = loss * self.weight.view(1, -1)
+
+        # Average loss over classes and batch
+        loss = loss.sum(dim=-1).mean()
+        return loss

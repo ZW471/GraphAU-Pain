@@ -10,7 +10,10 @@ def make_dataset(image_list, label_list, au_relation=None):
     if au_relation is not None:
         images = [(image_list[i].strip(),  label_list[i, :],au_relation[i,:]) for i in range(len_)]
     else:
-        images = [(image_list[i].strip(),  label_list[i, :]) for i in range(len_)]
+        if len(label_list.shape) == 1:
+            images = [(image_list[i].strip(),  label_list[i]) for i in range(len_)]
+        else:
+            images = [(image_list[i].strip(),  label_list[i, :]) for i in range(len_)]
     return images
 
 
@@ -27,7 +30,7 @@ class UNBC(Dataset):
     def __init__(self, root_path, train=True, fold = 1, transform=None, crop_size = 172, stage=1, loader=default_loader):
 
         assert fold>0 and fold <=3, 'The fold num must be restricted from 1 to 3'
-        assert stage>0 and stage <=2, 'The stage num must be restricted from 1 to 2'
+        assert stage>0 and stage <=3, 'The stage num must be restricted from 1 to 3'
         self._root_path = root_path
         self._train = train
         self._stage = stage
@@ -40,8 +43,12 @@ class UNBC(Dataset):
             train_image_list_path = os.path.join(root_path, 'list', 'UNBC_train_img_path_fold' + str(fold) +'.txt')
             train_image_list = open(train_image_list_path).readlines()
             # img labels
-            train_label_list_path = os.path.join(root_path, 'list', 'UNBC_train_label_fold' + str(fold) + '.txt')
+            if self._stage == 3:
+                train_label_list_path = os.path.join(root_path, 'list', 'UNBC_train_pspi_fold' + str(fold) + '.txt')
+            else:
+                train_label_list_path = os.path.join(root_path, 'list', 'UNBC_train_label_fold' + str(fold) + '.txt')
             train_label_list = np.loadtxt(train_label_list_path)
+
 
             # AU relation
             if self._stage == 2:
@@ -57,7 +64,10 @@ class UNBC(Dataset):
             test_image_list = open(test_image_list_path).readlines()
 
             # img labels
-            test_label_list_path = os.path.join(root_path, 'list', 'UNBC_test_label_fold' + str(fold) + '.txt')
+            if self._stage == 3:
+                test_label_list_path = os.path.join(root_path, 'list', 'UNBC_test_pspi_fold' + str(fold) + '.txt')
+            else:
+                test_label_list_path = os.path.join(root_path, 'list', 'UNBC_test_label_fold' + str(fold) + '.txt')
             test_label_list = np.loadtxt(test_label_list_path)
             self.data_list = make_dataset(test_image_list, test_label_list)
     def __getitem__(self, index):
