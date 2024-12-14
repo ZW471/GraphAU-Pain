@@ -1,0 +1,53 @@
+only backbone
+
+{'val_mean_f1_score 22.76 val_mean_acc 62.29'}
+{'F1-score-list:'}
+{'No Pain: 63.49 Mild Pain: 4.30 Pain: 0.50'}
+{'Acc-list:'}
+{'No Pain: 50.62 Mild Pain: 82.85 Pain: 53.41'}
+
+No Pain
+              precision    recall  f1-score   support
+
+           0       0.15      0.59      0.24      1209
+           1       0.89      0.49      0.63      8140
+
+    accuracy                           0.51      9349
+   macro avg       0.52      0.54      0.44      9349
+weighted avg       0.79      0.51      0.58      9349
+
+no gnn
+
+{'val_mean_f1_score 37.64 val_mean_acc 80.95'}
+{'F1-score-list:'}
+{'No Pain: 85.70 Mild Pain: 17.60 Pain: 9.61'}
+{'Acc-list:'}
+{'No Pain: 77.14 Mild Pain: 79.17 Pain: 86.52'}
+
+No Pain
+              precision    recall  f1-score   support
+
+           0       0.32      0.67      0.43      1209
+           1       0.94      0.79      0.86      8140
+
+    accuracy                           0.77      9349
+   macro avg       0.63      0.73      0.64      9349
+weighted avg       0.86      0.77      0.80      9349
+
+full
+
+{'val_mean_f1_score 63.13 val_mean_acc 86.43'}
+{'F1-score-list:'}
+{'No Pain: 87.73 Mild Pain: 46.42 Pain: 55.25'}
+{'Acc-list:'}
+{'No Pain: 80.31 Mild Pain: 79.85 Pain: 99.13'}
+
+No Pain
+              precision    recall  f1-score   support
+
+           0       0.37      0.77      0.50      1209
+           1       0.96      0.81      0.88      8140
+
+    accuracy                           0.80      9349
+   macro avg       0.67      0.79      0.69      9349
+weighted avg       0.88      0.80      0.83      9349

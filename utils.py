@@ -55,6 +55,38 @@ def statistics(pred, y, thresh):
         statistics_list.append({'TP': TP, 'FP': FP, 'TN': TN, 'FN': FN})
     return statistics_list
 
+def statistics_softmax(pred, y):
+    batch_size = pred.size(0)
+    class_nb = pred.size(1)
+    cl_index = torch.argmax(pred, dim=1, keepdim=True)  # Get index of max probability
+    pred = torch.zeros_like(pred).scatter_(1, cl_index, 1)  # Create hard label tensor
+    pred = pred.long()
+    statistics_list = []
+    for j in range(class_nb):
+        TP = 0
+        FP = 0
+        FN = 0
+        TN = 0
+        for i in range(batch_size):
+            if pred[i][j] == 1:
+                if y[i][j] >= 1:
+                    TP += 1
+                elif y[i][j] == 0:
+                    FP += 1
+                else:
+                    raise ValueError(f'Unexpected y value {y[i][j]}')
+            elif pred[i][j] == 0:
+                if y[i][j] >= 1:
+                    FN += 1
+                elif y[i][j] == 0:
+                    TN += 1
+                else:
+                    raise ValueError(f'Unexpected y value {y[i][j]}')
+            else:
+                raise ValueError(f'Unexpected target value {pred[i][j]}')
+        statistics_list.append({'TP': TP, 'FP': FP, 'TN': TN, 'FN': FN})
+    return statistics_list
+
 
 def calc_f1_score(statistics_list):
     f1_score_list = []

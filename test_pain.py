@@ -7,7 +7,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import logging
 
-from model.ANFL import MEFARG, PainEstimation
+from model.ANFL import MEFARG, PainEstimation, BackboneOnly, FullPictureMEFARGNoGNN, FullPictureMEFARG
 from dataset import *
 from utils import *
 from conf import get_config,set_logger,set_outdir,set_env
@@ -43,36 +43,46 @@ def train(conf,net,train_loader,optimizer,epoch,criterion):
     return losses.avg
 
 
-# Val
-def val(net,val_loader,criterion):
-    losses = AverageMeter()
+def val(net, val_loader, output_prediction=None):
+    if output_prediction is not None:
+        with open(output_prediction, 'w') as f:
+            f.write('')
     net.eval()
-    statistics_list = []
+    statistics_list = None
     for batch_idx, (inputs, targets) in enumerate(tqdm(val_loader)):
+        targets = targets.float()
         with torch.no_grad():
-            # targets = targets.float()
             if torch.cuda.is_available():
                 inputs, targets = inputs.cuda(), targets.cuda()
             outputs = net(inputs)
-            loss = criterion(outputs, targets)
-            losses.update(loss.data.item(), inputs.size(0))
-            # update_list = statistics(outputs, targets.detach(), 0.5)
-            # statistics_list = update_statistics_list(statistics_list, update_list)
-    return losses.avg
+            if output_prediction is not None:
+                with open(output_prediction, 'a') as f:
+                    pred = nn.functional.softmax(outputs, dim=1)
+                    cl_index = torch.argmax(pred, dim=1, keepdim=True)  # Get index of max probability
+                    pred = torch.zeros_like(pred).scatter_(1, cl_index, 1)  # Create hard label tensor
+                    output_texts = pred.cpu().numpy()
+                    for i in range(output_texts.shape[0]):
+                        f.write(' '.join([str(int(elem)) for elem in output_texts[i]]) + '\n')
+            update_list = statistics_softmax(outputs, targets.detach())
+            statistics_list = update_statistics_list(statistics_list, update_list)
+    mean_f1_score, f1_score_list = calc_f1_score(statistics_list)
+    mean_acc, acc_list = calc_acc(statistics_list)
+    return mean_f1_score, f1_score_list, mean_acc, acc_list
 
 
 def main(conf):
-    if conf.dataset == 'UNBC':
-        dataset_info = UNBC_infolist
+    if conf.dataset == 'BP4D':
+        dataset_info = BP4D_infolist
+    elif conf.dataset == 'DISFA':
+        dataset_info = DISFA_infolist
+    elif conf.dataset == 'UNBC':
+        dataset_info = UNBC_pain_infolist
 
-    start_epoch = 0
     # data
     train_loader,val_loader,train_data_num,val_data_num = get_dataloader(conf)
-    train_weight = torch.from_numpy(np.loadtxt(os.path.join(conf.dataset_path, 'list', conf.dataset+'_weight_fold'+str(conf.fold)+'.txt')))
-
     logging.info("Fold: [{} | {}  val_data_num: {} ]".format(conf.fold, conf.N_fold, val_data_num))
+    net = FullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc)
 
-    net = PainEstimation(num_classes=conf.num_classes, backbone=conf.arc, neighbor_num=conf.neighbor_num, metric=conf.metric)
     # resume
     if conf.resume != '':
         logging.info("Resume form | {} ]".format(conf.resume))
@@ -81,38 +91,21 @@ def main(conf):
     if torch.cuda.is_available():
         net = nn.DataParallel(net).cuda()
 
-    criterion = nn.MSELoss()
-    optimizer = optim.AdamW(net.parameters(),  betas=(0.9, 0.999), lr=conf.learning_rate, weight_decay=conf.weight_decay)
-    print('the init learning rate is ', conf.learning_rate)
+    #test
+    val_mean_f1_score, val_f1_score, val_mean_acc, val_acc = val(net, val_loader, output_prediction=conf.prediction)
 
-    #train and val
-    for epoch in range(start_epoch, conf.epochs):
-        lr = optimizer.param_groups[0]['lr']
-        logging.info("Epoch: [{} | {} LR: {} ]".format(epoch + 1, conf.epochs, lr))
-        train_loss = train(conf,net,train_loader,optimizer,epoch,criterion)
-        val_loss = val(net, val_loader, criterion)
+    # log
+    infostr = {'val_mean_f1_score {:.2f} val_mean_acc {:.2f}' .format(100.* val_mean_f1_score, 100.* val_mean_acc)}
+    logging.info(infostr)
+    infostr = {'F1-score-list:'}
+    logging.info(infostr)
+    infostr = dataset_info(val_f1_score)
+    logging.info(infostr)
+    infostr = {'Acc-list:'}
+    logging.info(infostr)
+    infostr = dataset_info(val_acc)
+    logging.info(infostr)
 
-        # log
-        infostr = {'Epoch:  {}   train_loss: {:.5f}  val_loss: {:.5f}'
-                   .format(epoch + 1, train_loss, val_loss)}
-
-        logging.info(infostr)
-
-        # save checkpoints
-        if (epoch+1) % 1 == 0:
-            checkpoint = {
-                'epoch': epoch,
-                'state_dict': net.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            }
-            torch.save(checkpoint, os.path.join(conf['outdir'], 'epoch' + str(epoch + 1) + '_model_fold' + str(conf.fold) + '.pth'))
-
-        checkpoint = {
-            'epoch': epoch,
-            'state_dict': net.state_dict(),
-            'optimizer': optimizer.state_dict(),
-        }
-        torch.save(checkpoint, os.path.join(conf['outdir'], 'cur_model_fold' + str(conf.fold) + '.pth'))
 
 
 # ---------------------------------------------------------------------------------
