@@ -55,7 +55,7 @@ def val(net,val_loader,criterion):
             outputs = net(inputs)
             loss = criterion(outputs, targets)
             losses.update(loss.data.item(), inputs.size(0))
-            update_list = statistics(outputs, targets.detach(), 0.5)
+            update_list = statistics_softmax(outputs, targets.detach())
             statistics_list = update_statistics_list(statistics_list, update_list)
     mean_f1_score, f1_score_list = calc_f1_score(statistics_list)
     mean_acc, acc_list = calc_acc(statistics_list)
