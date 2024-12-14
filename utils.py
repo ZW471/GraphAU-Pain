@@ -344,3 +344,41 @@ class WeightedCrossEntropyLoss(nn.Module):
         # Average loss over classes and batch
         loss = loss.sum(dim=-1).mean()
         return loss
+
+
+class WeightedMSELoss(nn.Module):
+    def __init__(self, weight=None):
+        """
+        Initialize the WeightedMSELoss.
+
+        Args:
+            weight (torch.Tensor or None): Tensor of weights for each feature. If None, no weighting is applied.
+        """
+        super(WeightedMSELoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, x, y):
+        """
+        Compute the weighted mean squared error between x and y.
+
+        Args:
+            x (torch.Tensor): Predicted values, shape (batch_size, num_features).
+            y (torch.Tensor): Ground truth values, shape (batch_size, num_features).
+
+        Returns:
+            torch.Tensor: Scalar loss value.
+        """
+        # Element-wise squared error
+        squared_error = (x * 5 - y) ** 2
+
+        # Apply weights if provided
+        if self.weight is not None:
+            weighted_error = squared_error * self.weight.view(1, -1)
+        else:
+            weighted_error = squared_error
+
+        # Mean over features
+        loss_per_sample = weighted_error.mean(dim=-1)
+
+        # Mean over batch
+        return loss_per_sample.mean()
