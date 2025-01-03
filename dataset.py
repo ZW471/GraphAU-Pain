@@ -37,7 +37,7 @@ class UNBC(Dataset):
         self._transform = transform
         self.crop_size = crop_size
         self.loader = loader
-        self.img_folder_path = os.path.join(root_path,'img')
+        self.img_folder_path = os.path.join(root_path,'img' if crop_size == 172 else 'resized_img')
         if self._train:
             # img
             train_image_list_path = os.path.join(root_path, 'list', 'UNBC_train_img_path_fold' + str(fold) +'.txt')
