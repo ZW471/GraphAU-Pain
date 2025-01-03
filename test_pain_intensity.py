@@ -57,19 +57,16 @@ def val(net, val_loader, output_prediction=None):
                 inputs, targets = inputs.cuda(), targets.cuda()
             outputs = net(inputs)
             if output_prediction is not None:
+                # TODO:
                 with open(output_prediction, 'a') as f:
-                    pred = nn.functional.softmax(outputs, dim=1)
-                    cl_index = torch.argmax(pred, dim=1, keepdim=True)  # Get index of max probability
-                    pred = torch.zeros_like(pred).scatter_(1, cl_index, 1)  # Create hard label tensor
-                    output_texts = pred.cpu().numpy()
-                    for i in range(output_texts.shape[0]):
-                        f.write(' '.join([str(int(elem)) for elem in output_texts[i]]) + '\n')
-            update_list = statistics_softmax(outputs, targets.detach())
-            statistics_list = update_statistics_list(statistics_list, update_list)
-    mean_f1_score, f1_score_list = calc_f1_score(statistics_list)
-    mean_acc, acc_list = calc_acc(statistics_list)
-    return mean_f1_score, f1_score_list, mean_acc, acc_list
-
+                    for i in range(len(outputs)):
+                        f.write('{}\n'.format(outputs[i].item()))
+    #         update_list = statistics_softmax(outputs, targets.detach())
+    #         statistics_list = update_statistics_list(statistics_list, update_list)
+    # mean_f1_score, f1_score_list = calc_f1_score(statistics_list)
+    # mean_acc, acc_list = calc_acc(statistics_list)
+    # return mean_f1_score, f1_score_list, mean_acc, acc_list
+    return [], [], [], []
 
 def main(conf):
     if conf.dataset == 'BP4D':
@@ -82,7 +79,7 @@ def main(conf):
     # data
     train_loader,val_loader,train_data_num,val_data_num = get_dataloader(conf)
     logging.info("Fold: [{} | {}  val_data_num: {} ]".format(conf.fold, conf.N_fold, val_data_num))
-    net = FullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc)
+    net = RegFullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc)
 
     # resume
     if conf.resume != '':
@@ -96,16 +93,16 @@ def main(conf):
     val_mean_f1_score, val_f1_score, val_mean_acc, val_acc = val(net, val_loader, output_prediction=conf.prediction)
 
     # log
-    infostr = {'val_mean_f1_score {:.2f} val_mean_acc {:.2f}' .format(100.* val_mean_f1_score, 100.* val_mean_acc)}
-    logging.info(infostr)
-    infostr = {'F1-score-list:'}
-    logging.info(infostr)
-    infostr = dataset_info(val_f1_score)
-    logging.info(infostr)
-    infostr = {'Acc-list:'}
-    logging.info(infostr)
-    infostr = dataset_info(val_acc)
-    logging.info(infostr)
+    # infostr = {'val_mean_f1_score {:.2f} val_mean_acc {:.2f}' .format(100.* val_mean_f1_score, 100.* val_mean_acc)}
+    # logging.info(infostr)
+    # infostr = {'F1-score-list:'}
+    # logging.info(infostr)
+    # infostr = dataset_info(val_f1_score)
+    # logging.info(infostr)
+    # infostr = {'Acc-list:'}
+    # logging.info(infostr)
+    # infostr = dataset_info(val_acc)
+    # logging.info(infostr)
 
 
 

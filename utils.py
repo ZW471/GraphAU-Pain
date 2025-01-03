@@ -88,6 +88,8 @@ def statistics_softmax(pred, y):
     return statistics_list
 
 
+
+
 def calc_f1_score(statistics_list):
     f1_score_list = []
 
@@ -155,6 +157,11 @@ def UNBC_infolist(list):
 def UNBC_pain_infolist(list):
 
     infostr = {'No Pain: {:.2f} Mild Pain: {:.2f} Pain: {:.2f}'.format(100.*list[0],100.*list[1],100.*list[2])}
+    return infostr
+
+def UNBC_pain_infolist_binary(list):
+
+    infostr = {'No Pain: {:.2f} Pain: {:.2f}'.format(100.*list[0],100.*list[1])}
     return infostr
 
 

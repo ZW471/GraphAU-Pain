@@ -191,7 +191,7 @@ class BackboneOnly(nn.Module):
 
 
 class FullPictureMEFARG(nn.Module):
-    def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots'):
+    def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots', binary=False):
         super(FullPictureMEFARG, self).__init__()
         if 'transformer' in backbone:
             if backbone == 'swin_transformer_tiny':
@@ -224,7 +224,10 @@ class FullPictureMEFARG(nn.Module):
         self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
-        self.fc = nn.Linear(36, 3)  # Fully connected layer for pain intensity mapping
+        if binary:
+            self.fc = nn.Linear(36, 2)
+        else:
+            self.fc = nn.Linear(36, 3)  # Fully connected layer for pain intensity mapping
     def forward(self, x):
         # x: b d c
         bb = self.backbone(x)
@@ -243,6 +246,61 @@ class FullPictureMEFARG(nn.Module):
         cl = self.relu(cl)
         cl = self.fc(cl)
         return cl
+
+class RegFullPictureMEFARG(nn.Module):
+    def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots'):
+        super(RegFullPictureMEFARG, self).__init__()
+        if 'transformer' in backbone:
+            if backbone == 'swin_transformer_tiny':
+                self.backbone = swin_transformer_tiny()
+            elif backbone == 'swin_transformer_small':
+                self.backbone = swin_transformer_small()
+            else:
+                self.backbone = swin_transformer_base()
+            self.in_channels = self.backbone.num_features
+            self.out_channels = self.in_channels // 2
+            self.backbone.head = None
+
+        elif 'resnet' in backbone:
+            if backbone == 'resnet18':
+                self.backbone = resnet18()
+            elif backbone == 'resnet101':
+                self.backbone = resnet101()
+            else:
+                self.backbone = resnet50()
+            self.in_channels = self.backbone.fc.weight.shape[1]
+            self.out_channels = self.in_channels // 4
+            self.backbone.fc = None
+        else:
+            raise Exception("Error: wrong backbone name: ", backbone)
+
+        self.global_linear = LinearBlock(self.in_channels, self.out_channels)
+        self.head = Head(self.out_channels, num_classes, neighbor_num, metric)
+
+        self.fc_au = nn.Linear(8, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        self.fc = nn.Linear(36, 1)  # Fully connected layer for pain intensity mapping
+    def forward(self, x):
+        # x: b d c
+        bb = self.backbone(x)
+        x = self.global_linear(bb)
+
+        bb = self.fc_bb(bb)
+        bb = self.relu(bb)
+
+        au = self.head(x)
+        au = self.fc_au(au)
+        au = self.relu(au)
+        au = au.unsqueeze(1)
+
+        cl = torch.matmul(au, bb)
+        cl = cl.squeeze(1)
+        cl = self.relu(cl)
+        cl = self.fc(cl)
+        intensity = self.sigmoid(cl) * 16
+        return intensity
 
 class HeadNoGNN(nn.Module):
     def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots'):

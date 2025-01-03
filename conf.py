@@ -45,6 +45,8 @@ parser.add_argument('--exp-name', default="Test", type=str, help="experiment nam
 parser.add_argument('--resume', default='', type=str, metavar='path', help='path to latest checkpoint (default: none)')
 
 parser.add_argument('--prediction', default='', type=str, metavar='path', help='path to save prediction results')
+
+parser.add_argument('--binary', default=False, type=bool, help='binary classification or not')
 # ------------------------------
 
 

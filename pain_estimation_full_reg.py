@@ -7,7 +7,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import logging
 
-from model.ANFL import MEFARG, PainEstimation, BackboneOnly, FullPictureMEFARG
+from model.ANFL import MEFARG, PainEstimation, BackboneOnly, FullPictureMEFARG, RegFullPictureMEFARG
 from dataset import *
 from utils import *
 from conf import get_config,set_logger,set_outdir,set_env
@@ -55,19 +55,12 @@ def val(net,val_loader,criterion):
             outputs = net(inputs)
             loss = criterion(outputs, targets)
             losses.update(loss.data.item(), inputs.size(0))
-            update_list = statistics_softmax(outputs, targets.detach())
-            statistics_list = update_statistics_list(statistics_list, update_list)
-    mean_f1_score, f1_score_list = calc_f1_score(statistics_list)
-    mean_acc, acc_list = calc_acc(statistics_list)
-    return losses.avg, mean_f1_score, f1_score_list, mean_acc, acc_list
+    return losses.avg
 
 
 def main(conf):
     if conf.dataset == 'UNBC':
-        if conf.binary:
-            dataset_info = UNBC_pain_infolist_binary
-        else:
-            dataset_info = UNBC_pain_infolist
+        dataset_info = UNBC_pain_infolist
 
     start_epoch = 0
     # data
@@ -76,7 +69,7 @@ def main(conf):
 
     logging.info("Fold: [{} | {}  val_data_num: {} ]".format(conf.fold, conf.N_fold, val_data_num))
 
-    net = FullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc, neighbor_num=conf.neighbor_num, metric=conf.metric, binary=conf.binary)
+    net = RegFullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc, neighbor_num=conf.neighbor_num, metric=conf.metric)
     # resume
     if conf.resume != '':
         logging.info("Resume form | {} ]".format(conf.resume))
@@ -85,7 +78,7 @@ def main(conf):
     if torch.cuda.is_available():
         net = nn.DataParallel(net).cuda()
 
-    criterion = WeightedCrossEntropyLoss(weight=train_weight)
+    criterion = nn.L1Loss()
     optimizer = optim.AdamW(net.parameters(),  betas=(0.9, 0.999), lr=conf.learning_rate, weight_decay=conf.weight_decay)
     print('the init learning rate is ', conf.learning_rate)
 
@@ -94,22 +87,13 @@ def main(conf):
         lr = optimizer.param_groups[0]['lr']
         logging.info("Epoch: [{} | {} LR: {} ]".format(epoch + 1, conf.epochs, lr))
         train_loss = train(conf,net,train_loader,optimizer,epoch,criterion)
-        val_loss, val_mean_f1_score, val_f1_score, val_mean_acc, val_acc = val(net, val_loader, criterion)
+        val_loss = val(net, val_loader, criterion)
 
         # log
-        infostr = {'Epoch:  {}   train_loss: {:.5f}  val_loss: {:.5f}  val_mean_f1_score {:.2f},val_mean_acc {:.2f}'
-                   .format(epoch + 1, train_loss, val_loss, 100.* val_mean_f1_score, 100.* val_mean_acc)}
+        infostr = {'Epoch:  {}   train_loss: {:.5f}  val_loss: {:.5f}'
+                   .format(epoch + 1, train_loss, val_loss)}
 
         logging.info(infostr)
-        infostr = {'F1-score-list:'}
-        logging.info(infostr)
-        infostr = dataset_info(val_f1_score)
-        logging.info(infostr)
-        infostr = {'Acc-list:'}
-        logging.info(infostr)
-        infostr = dataset_info(val_acc)
-        logging.info(infostr)
-
         # save checkpoints
         if (epoch+1) % 1 == 0:
             checkpoint = {
