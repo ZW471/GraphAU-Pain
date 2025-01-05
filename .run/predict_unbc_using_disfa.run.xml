@@ -15,7 +15,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_au.py" />
-    <option name="PARAMETERS" value="--dataset UNBC --arc resnet50 --exp-name test_disfa --resume results/resnet50_second_stage/disfa_pretrained/MEFARG_resnet50_DISFA_fold1.pth --fold 1 --crop-size 172 --prediction results/unbc_predictions.txt" />
+    <option name="PARAMETERS" value="--dataset UNBC --arc resnet50 --exp-name test_unbc --resume results/UNBC_224/bs_64_seed_0_lr_0.0001/epoch8_model_fold1.pth --fold 1 --crop-size 224 --prediction results/unbc_predictions.txt" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

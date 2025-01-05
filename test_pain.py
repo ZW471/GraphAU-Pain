@@ -8,7 +8,7 @@ from tqdm import tqdm
 import logging
 
 from model.ANFL import MEFARG, PainEstimation, BackboneOnly, FullPictureMEFARGNoGNN, FullPictureMEFARG, \
-    RegFullPictureMEFARG
+    RegFullPictureMEFARG, AuAndPeMEFARG
 from dataset import *
 from utils import *
 from conf import get_config,set_logger,set_outdir,set_env

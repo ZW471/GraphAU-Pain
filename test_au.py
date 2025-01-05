@@ -1,4 +1,6 @@
 import os
+from functools import partial
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,15 +16,15 @@ from conf import get_config,set_logger,set_outdir,set_env
 def get_dataloader(conf):
     print('==> Preparing data...')
     if conf.dataset == 'BP4D':
-        valset = BP4D(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 2)
+        valset = BP4D(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 1)
         val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
 
     elif conf.dataset == 'DISFA':
-        valset = DISFA(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 2)
+        valset = DISFA(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 1)
         val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
 
     elif conf.dataset == 'UNBC':
-        valset = UNBC(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 2)
+        valset = UNBC(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 1)
         val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
 
     return val_loader, len(valset)
@@ -59,7 +61,7 @@ def main(conf):
     elif conf.dataset == 'DISFA':
         dataset_info = DISFA_infolist
     elif conf.dataset == 'UNBC':
-        dataset_info = UNBC_infolist
+        dataset_info = partial(UNBC_infolist, use_disfa=(not conf.ori_unbc))
 
     # data
     val_loader, val_data_num = get_dataloader(conf)
