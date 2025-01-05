@@ -331,10 +331,11 @@ class AuAndPeMEFARG(nn.Module):
         self.fc_pe = nn.Linear(512, 36)
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
-        if binary:
-            self.fc = nn.Linear(72, 2)
-        else:
-            self.fc = nn.Linear(72, 3)  # Fully connected layer for pain intensity mapping
+        self.fc = nn.Sequential(
+            nn.Linear(85, 32),
+            nn.ReLU(),
+            nn.Linear(32, 2 if binary else 3)
+        )
     def forward(self, x):
         # x: b d c
         bb = self.backbone(x)

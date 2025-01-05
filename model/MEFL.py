@@ -214,182 +214,230 @@ class MEFARG(nn.Module):
 class GNNWithGraphRepresentation(nn.Module):
     def __init__(self, in_channels, num_classes):
         super(GNNWithGraphRepresentation, self).__init__()
-        # Initialize the base GNN components
         self.in_channels = in_channels
         self.num_classes = num_classes
+        # GNN Matrix: E x N
+        # Start Matrix Item:  define the source node of one edge
+        # End Matrix Item:  define the target node of one edge
+        # Algorithm details in Residual Gated Graph Convnets: arXiv preprint arXiv:1711.07553
+        # or Benchmarking Graph Neural Networks: arXiv preprint arXiv:2003.00982v3
 
-        # Define matrices for handling graph topology
         start, end = create_e_matrix(self.num_classes)
         self.start = Variable(start, requires_grad=False)
         self.end = Variable(end, requires_grad=False)
 
-        # GNN layers for node and edge feature updates
-        self.U1 = nn.Linear(in_channels, in_channels, bias=False)
-        self.V1 = nn.Linear(in_channels, in_channels, bias=False)
-        self.A1 = nn.Linear(in_channels, in_channels, bias=False)
-        self.B1 = nn.Linear(in_channels, in_channels, bias=False)
-        self.E1 = nn.Linear(in_channels, in_channels, bias=False)
+        dim_in = self.in_channels
+        dim_out = self.in_channels
 
-        self.U2 = nn.Linear(in_channels, in_channels, bias=False)
-        self.V2 = nn.Linear(in_channels, in_channels, bias=False)
-        self.A2 = nn.Linear(in_channels, in_channels, bias=False)
-        self.B2 = nn.Linear(in_channels, in_channels, bias=False)
-        self.E2 = nn.Linear(in_channels, in_channels, bias=False)
+        self.U1 = nn.Linear(dim_in, dim_out, bias=False)
+        self.V1 = nn.Linear(dim_in, dim_out, bias=False)
+        self.A1 = nn.Linear(dim_in, dim_out, bias=False)
+        self.B1 = nn.Linear(dim_in, dim_out, bias=False)
+        self.E1 = nn.Linear(dim_in, dim_out, bias=False)
 
-        # Additional GNN layer for generating graph representation f_g
-        self.graph_gnn = nn.Linear(in_channels, in_channels, bias=False)
+        self.U2 = nn.Linear(dim_in, dim_out, bias=False)
+        self.V2 = nn.Linear(dim_in, dim_out, bias=False)
+        self.A2 = nn.Linear(dim_in, dim_out, bias=False)
+        self.B2 = nn.Linear(dim_in, dim_out, bias=False)
+        self.E2 = nn.Linear(dim_in, dim_out, bias=False)
 
-        # Activation and normalization functions
         self.sigmoid = nn.Sigmoid()
-        self.softmax = nn.Softmax(dim=2)
-        self.relu = nn.ReLU()
-
-        # Batch normalization layers
+        self.softmax = nn.Softmax(2)
         self.bnv1 = nn.BatchNorm1d(num_classes)
-        self.bne1 = nn.BatchNorm1d(num_classes ** 2)
+        self.bne1 = nn.BatchNorm1d(num_classes*num_classes)
+
         self.bnv2 = nn.BatchNorm1d(num_classes)
-        self.bne2 = nn.BatchNorm1d(num_classes ** 2)
+        self.bne2 = nn.BatchNorm1d(num_classes * num_classes)
 
-        self.init_weights_linear(in_channels)
+        self.act = nn.ReLU()
 
-    def init_weights_linear(self, dim_in):
-        # Initialize weights for linear layers and batch normalization
-        gain = np.sqrt(2.0 / dim_in)
-        for layer in [self.U1, self.V1, self.A1, self.B1, self.E1, self.U2, self.V2, self.A2, self.B2, self.E2,
-                      self.graph_gnn]:
-            layer.weight.data.normal_(0, gain)
-        for bn in [self.bnv1, self.bne1, self.bnv2, self.bne2]:
-            bn.weight.data.fill_(1)
-            bn.bias.data.zero_()
+        self.init_weights_linear(dim_in, 1)
+
+    def init_weights_linear(self, dim_in, gain):
+        # conv1
+        scale = gain * np.sqrt(2.0 / dim_in)
+        self.U1.weight.data.normal_(0, scale)
+        self.V1.weight.data.normal_(0, scale)
+        self.A1.weight.data.normal_(0, scale)
+        self.B1.weight.data.normal_(0, scale)
+        self.E1.weight.data.normal_(0, scale)
+
+        self.U2.weight.data.normal_(0, scale)
+        self.V2.weight.data.normal_(0, scale)
+        self.A2.weight.data.normal_(0, scale)
+        self.B2.weight.data.normal_(0, scale)
+        self.E2.weight.data.normal_(0, scale)
+
+        bn_init(self.bnv1)
+        bn_init(self.bne1)
+        bn_init(self.bnv2)
+        bn_init(self.bne2)
 
     def forward(self, x, edge):
-        # Get device
+        # device
         dev = x.get_device()
         if dev >= 0:
             start = self.start.to(dev)
             end = self.end.to(dev)
 
-        # ========== GNN Layer 1 ==========
-        # Node and edge computation
-        Vix = self.A1(x)
-        Vjx = self.B1(x)
-        e = self.E1(edge)
-        edge = edge + self.relu(self.bne1(
-            torch.einsum('ev, bvc -> bec', (end, Vix)) +
-            torch.einsum('ev, bvc -> bec', (start, Vjx)) + e
-        ))
+        # GNN Layer 1:
+        res = x
+        Vix = self.A1(x)  # V x d_out
+        Vjx = self.B1(x)  # V x d_out
+        e = self.E1(edge)  # E x d_out
+        edge = edge + self.act(self.bne1(torch.einsum('ev, bvc -> bec', (end, Vix)) + torch.einsum('ev, bvc -> bec',(start, Vjx)) + e))  # E x d_out
 
         e = self.sigmoid(edge)
-        e = self.softmax(e.view(*e.shape[:2], self.num_classes, -1)).view_as(edge)
+        b, _, c = e.shape
+        e = e.view(b,self.num_classes, self.num_classes, c)
+        e = self.softmax(e)
+        e = e.view(b, -1, c)
 
-        Ujx = self.V1(x)
-        Ujx = torch.einsum('ev, bvc -> bec', (start, Ujx))
-        Uix = self.U1(x)
-        x = Uix + torch.einsum('ve, bec -> bvc', (end.t(), e * Ujx)) / self.num_classes
-        x = self.relu(x + self.bnv1(x))
-        res_x = x  # For residual connection
+        Ujx = self.V1(x)  # V x H_out
+        Ujx = torch.einsum('ev, bvc -> bec', (start, Ujx))  # E x H_out
+        Uix = self.U1(x)  # V x H_out
+        x = Uix + torch.einsum('ve, bec -> bvc', (end.t(), e * Ujx)) / self.num_classes  # V x H_out
+        x = self.act(res + self.bnv1(x))
+        res = x
 
-        # ========== GNN Layer 2 ==========
-        Vix = self.A2(x)
-        Vjx = self.B2(x)
-        e = self.E2(edge)
-        edge = edge + self.relu(self.bne2(
-            torch.einsum('ev, bvc -> bec', (end, Vix)) +
-            torch.einsum('ev, bvc -> bec', (start, Vjx)) + e
-        ))
+        h_g1 = x.mean(dim=-2)
+
+        # GNN Layer 2:
+        Vix = self.A2(x)  # V x d_out
+        Vjx = self.B2(x)  # V x d_out
+        e = self.E2(edge)  # E x d_out
+        edge = edge + self.act(self.bne2(torch.einsum('ev, bvc -> bec', (end, Vix)) + torch.einsum('ev, bvc -> bec', (start, Vjx)) + e))  # E x d_out
 
         e = self.sigmoid(edge)
-        e = self.softmax(e.view(*e.shape[:2], self.num_classes, -1)).view_as(edge)
+        b, _, c = e.shape
+        e = e.view(b, self.num_classes, self.num_classes, c)
+        e = self.softmax(e)
+        e = e.view(b, -1, c)
 
-        Ujx = self.V2(x)
-        Ujx = torch.einsum('ev, bvc -> bec', (start, Ujx))
-        Uix = self.U2(x)
-        x = Uix + torch.einsum('ve, bec -> bvc', (end.t(), e * Ujx)) / self.num_classes
-        x = self.relu(x + self.bnv2(res_x))
+        Ujx = self.V2(x)  # V x H_out
+        Ujx = torch.einsum('ev, bvc -> bec', (start, Ujx))  # E x H_out
+        Uix = self.U2(x)  # V x H_out
+        x = Uix + torch.einsum('ve, bec -> bvc', (end.t(), e * Ujx)) / self.num_classes  # V x H_out
+        x = self.act(res + self.bnv2(x))
 
-        # ========== Compute Graph Representation f_g ==========
-        # Combine node and edge features using a GNN layer or aggregation strategy
-        b, n, c = x.shape  # Batch size (b), nodes (n), feature dimension (c)
+        h_g2 = x.mean(dim=-2)
 
-        # Use edge features to modulate node features
-        edge_aggregated = torch.einsum('ve, bec -> bvc', (self.start + self.end, edge))  # Aggregate edges globally
-        x_with_edges = x + edge_aggregated  # Combine edge information with node features
+        h_g = torch.cat([h_g1, h_g2], dim=-1)
+        return x, edge, h_g
 
-        # Pass through an additional GNN layer to obtain the graph-level representation
-        f_g = self.graph_gnn(x_with_edges.mean(dim=1))  # GNN layer on the globally aggregated nodes
-
-        return x, edge, f_g
 
 
 class HeadWithGraphRepresentation(nn.Module):
-    def __init__(self, in_channels, num_classes, graph_dim):
-        """
-        Head module for the GNNWithGraphRepresentation.
-        Args:
-            in_channels: Input feature dimensionality for each node.
-            num_classes: Number of classes for classification tasks.
-            graph_dim: Dimensionality of the graph-level representation `f_g`.
-        """
+    def __init__(self, in_channels, num_classes):
         super(HeadWithGraphRepresentation, self).__init__()
+        # The head of network
+        # Input: the feature maps x from backbone
+        # Output: the AU recognition probabilities cl And the logits cl_edge of edge features for classification
+        # Modules: 1. AFG extracts individual Au feature maps U_1 ---- U_N
+        #          2. GEM: graph edge modeling for learning multi-dimensional edge features
+        #          3. Gated-GCN for graph learning with node and multi-dimensional edge features
+        # sc: individually calculate cosine similarity between node features and a trainable vector.
+        # edge fc: for edge prediction
+
         self.in_channels = in_channels
         self.num_classes = num_classes
-        self.graph_dim = graph_dim
-
-        # Individual classifiers for each node (AU recognition probabilities, etc.)
-        self.node_classifiers = nn.ModuleList([LinearBlock(in_channels, in_channels) for _ in range(num_classes)])
-
-        # Fully connected layer for graph-level tasks
-        self.graph_fc = nn.Linear(graph_dim, in_channels)
-
-        # Multi-dimensional edge feature modeling
-        self.edge_fc = GEM(in_channels, num_classes)
-
-        # Node and Edge-Level Graph Neural Network
-        self.gnn = GNNWithGraphRepresentation(in_channels, num_classes)
-
-        # Classifier for output (node and graph predictions)
-        self.classifier = nn.Linear(graph_dim, num_classes)
-
-        # Parameter for cosine similarity computation
-        self.sc = nn.Parameter(torch.zeros(num_classes, in_channels))
-        nn.init.xavier_uniform_(self.sc)
-
-        # Activation and normalization
+        class_linear_layers = []
+        for i in range(self.num_classes):
+            layer = LinearBlock(self.in_channels, self.in_channels)
+            class_linear_layers += [layer]
+        self.class_linears = nn.ModuleList(class_linear_layers)
+        self.edge_extractor = GEM(self.in_channels, self.num_classes)
+        self.gnn = GNNWithGraphRepresentation(self.in_channels, self.num_classes)
+        self.sc = nn.Parameter(torch.FloatTensor(torch.zeros(self.num_classes, self.in_channels)))
+        self.edge_fc = nn.Linear(self.in_channels, 4)
+        self.graph_fc = nn.Linear(self.in_channels*2, self.in_channels)
         self.relu = nn.ReLU()
 
+        nn.init.xavier_uniform_(self.edge_fc.weight)
+        nn.init.xavier_uniform_(self.sc)
+
     def forward(self, x):
-        """
-        Forward pass through the module.
-        Args:
-            x: Input feature maps with shape (batch_size, num_nodes, feature_dim).
+        # AFG
+        f_u = []
+        for i, layer in enumerate(self.class_linears):
+            f_u.append(layer(x).unsqueeze(1))
+        f_u = torch.cat(f_u, dim=1)
+        f_v = f_u.mean(dim=-2)
 
-        Returns:
-            cl: Classification logits for each node (cl).
-            cl_edge: Classification logits for graph edges.
-            f_g: Graph-level feature representation.
-        """
-        # Individual node feature extraction
-        f_u = torch.cat([layer(x).unsqueeze(1) for layer in self.node_classifiers], dim=1)  # Node features
-        f_v = f_u.mean(dim=-2)  # Aggregate node features
-
-        # Learn edge features with GEM
-        f_e = self.edge_fc(f_u, x)
+        # MEFL
+        f_e = self.edge_extractor(f_u, x)
         f_e = f_e.mean(dim=-2)
-
-        # Graph Neural Network layers (node, edge, and graph-level features)
         f_v, f_e, f_g = self.gnn(f_v, f_e)
 
-        # Compute node predictions (cl) using cosine similarity
         b, n, c = f_v.shape
-        sc_norm = F.normalize(self.relu(self.sc), p=2, dim=-1)  # Trainable parameters normalized
-        f_v_norm = F.normalize(f_v, p=2, dim=-1)  # Node features normalized
-        cl = (f_v_norm * sc_norm.view(1, n, c)).sum(dim=-1)  # Similarity-based node classification logits
+        sc = self.sc
+        sc = self.relu(sc)
+        sc = F.normalize(sc, p=2, dim=-1)
+        cl = F.normalize(f_v, p=2, dim=-1)
+        cl = (cl * sc.view(1, n, c)).sum(dim=-1, keepdim=False)
+        cl_edge = self.edge_fc(f_e)
+        cl_g = self.graph_fc(f_g)
+        return cl, cl_edge, cl_g
 
-        # Perform graph-level prediction using `f_g`
-        graph_out = self.graph_fc(f_g)
-        cl += self.classifier(graph_out)
 
-        # Edge predictions with the learned edge features
-        cl_edge = self.classifier(f_e)
+class MEFARGWithGraphRepresentation(nn.Module):
+    def __init__(self, num_classes=12, backbone='swin_transformer_base'):
+        super(MEFARGWithGraphRepresentation, self).__init__()
+        if 'transformer' in backbone:
+            if backbone == 'swin_transformer_tiny':
+                self.backbone = swin_transformer_tiny()
+            elif backbone == 'swin_transformer_small':
+                self.backbone = swin_transformer_small()
+            else:
+                self.backbone = swin_transformer_base()
+            self.in_channels = self.backbone.num_features
+            self.out_channels = self.in_channels // 2
+            self.backbone.head = None
 
-        return cl, cl_edge, f_g
+        elif 'resnet' in backbone:
+            if backbone == 'resnet18':
+                self.backbone = resnet18()
+            elif backbone == 'resnet101':
+                self.backbone = resnet101()
+            else:
+                self.backbone = resnet50()
+            self.in_channels = self.backbone.fc.weight.shape[1]
+            self.out_channels = self.in_channels // 4
+            self.backbone.fc = None
+        else:
+            raise Exception("Error: wrong backbone name: ", backbone)
+
+        self.global_linear = LinearBlock(self.in_channels, self.out_channels)
+        self.head = HeadWithGraphRepresentation(self.out_channels, num_classes)
+        self.fc_au = nn.Linear(8, 32)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(2048, 32)  # Fully connected layer for pain intensity mapping
+        self.fc_pe = nn.Linear(512, 49)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        self.fc = nn.Linear(98, 3)
+
+    def forward(self, x):
+        # x: b d c
+        bb = self.backbone(x)
+        x = self.global_linear(bb)
+        cl, _, cl_graph = self.head(x)
+
+        au, pe = cl, cl_graph
+        bb = self.fc_bb(bb)
+        bb = self.relu(bb)
+
+        au = self.fc_au(au)
+        au = self.relu(au)
+        au = au.unsqueeze(1)
+
+        pe = self.fc_pe(pe)
+        pe = self.relu(pe)
+
+        bb = bb.transpose(1, 2)  # Assuming bb has dimensions [batch_size, features, another_dim]
+        cl = torch.matmul(au, bb)
+        cl = cl.squeeze(1)
+        cl = self.relu(cl)
+        cl = torch.cat((cl, pe), dim=1)
+        cl = self.fc(cl)
+
+        return cl
