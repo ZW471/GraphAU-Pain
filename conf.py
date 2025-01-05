@@ -47,6 +47,8 @@ parser.add_argument('--resume', default='', type=str, metavar='path', help='path
 parser.add_argument('--prediction', default='', type=str, metavar='path', help='path to save prediction results')
 
 parser.add_argument('--binary', default=False, type=bool, help='binary classification or not')
+
+parser.add_argument('--ori_unbc', default=False, type=bool, help='use original unbc, otherwise disfa labeled')
 # ------------------------------
 
 

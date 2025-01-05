@@ -1,6 +1,4 @@
 import os
-from functools import partial
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,30 +7,17 @@ import torch.optim as optim
 from tqdm import tqdm
 import logging
 
-from model.ANFL import MEFARG
+from model.ANFL import MEFARG, PainEstimation, BackboneOnly, FullPictureMEFARG, AuAndPeMEFARG
 from dataset import *
 from utils import *
 from conf import get_config,set_logger,set_outdir,set_env
 
-
 def get_dataloader(conf):
     print('==> Preparing data...')
-    if conf.dataset == 'BP4D':
-        trainset = BP4D(conf.dataset_path, train=True, fold = conf.fold, transform=image_train(crop_size=conf.crop_size), crop_size=conf.crop_size, stage = 1)
+    if conf.dataset == 'UNBC':
+        trainset = UNBC(conf.dataset_path, train=True, fold = conf.fold, transform=image_train(crop_size=conf.crop_size), crop_size=conf.crop_size, stage = 3)
         train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
-        valset = BP4D(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 1)
-        val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
-
-    elif conf.dataset == 'DISFA':
-        trainset = DISFA(conf.dataset_path, train=True, fold = conf.fold, transform=image_train(crop_size=conf.crop_size), crop_size=conf.crop_size, stage = 1)
-        train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
-        valset = DISFA(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 1)
-        val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)\
-
-    elif conf.dataset == 'UNBC':
-        trainset = UNBC(conf.dataset_path, train=True, fold = conf.fold, transform=image_train(crop_size=conf.crop_size), crop_size=conf.crop_size, stage = 1)
-        train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
-        valset = UNBC(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 1)
+        valset = UNBC(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 3)
         val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
 
     return train_loader, val_loader, len(trainset), len(valset)
@@ -70,7 +55,7 @@ def val(net,val_loader,criterion):
             outputs = net(inputs)
             loss = criterion(outputs, targets)
             losses.update(loss.data.item(), inputs.size(0))
-            update_list = statistics(outputs, targets.detach(), 0.5)
+            update_list = statistics_softmax(outputs, targets.detach())
             statistics_list = update_statistics_list(statistics_list, update_list)
     mean_f1_score, f1_score_list = calc_f1_score(statistics_list)
     mean_acc, acc_list = calc_acc(statistics_list)
@@ -78,22 +63,34 @@ def val(net,val_loader,criterion):
 
 
 def main(conf):
-    if conf.dataset == 'BP4D':
-        dataset_info = BP4D_infolist
-    elif conf.dataset == 'DISFA':
-        dataset_info = DISFA_infolist
-    elif conf.dataset == 'UNBC':
-        print('ori_unbc: ', conf.ori_unbc)
-        dataset_info = partial(UNBC_infolist, use_disfa=(not conf.ori_unbc))
+    if conf.dataset == 'UNBC':
+        if conf.binary:
+            dataset_info = UNBC_pain_infolist_binary
+        else:
+            dataset_info = UNBC_pain_infolist
 
     start_epoch = 0
     # data
     train_loader,val_loader,train_data_num,val_data_num = get_dataloader(conf)
-    train_weight = torch.from_numpy(np.loadtxt(os.path.join(conf.dataset_path, 'list', conf.dataset+'_weight_fold'+str(conf.fold)+'.txt')))
+    train_weight = torch.from_numpy(np.loadtxt(os.path.join(conf.dataset_path, 'list', conf.dataset+'_pspi_w_fold'+str(conf.fold)+'.txt')))
 
     logging.info("Fold: [{} | {}  val_data_num: {} ]".format(conf.fold, conf.N_fold, val_data_num))
 
-    net = MEFARG(num_classes=conf.num_classes, backbone=conf.arc, neighbor_num=conf.neighbor_num, metric=conf.metric)
+    net = AuAndPeMEFARG(num_classes=conf.num_classes, backbone=conf.arc, neighbor_num=conf.neighbor_num, metric=conf.metric, binary=conf.binary)
+    # # Freeze all parameters initially
+    # for param in net.parameters():
+    #     param.requires_grad = False
+    #
+    # # Then unfreeze the specific layers: fc_pe and fc
+    # for param in net.fc_pe.parameters():
+    #     param.requires_grad = True
+    #
+    # for param in net.fc.parameters():
+    #     param.requires_grad = True
+    #
+    # # Check which layers are trainable
+    # for name, param in net.named_parameters():
+    #     print(f"{name}: requires_grad={param.requires_grad}")
     # resume
     if conf.resume != '':
         logging.info("Resume form | {} ]".format(conf.resume))
@@ -101,9 +98,8 @@ def main(conf):
 
     if torch.cuda.is_available():
         net = nn.DataParallel(net).cuda()
-        train_weight = train_weight.cuda()
 
-    criterion = WeightedAsymmetricLoss(weight=train_weight)
+    criterion = WeightedCrossEntropyLoss(weight=train_weight)
     optimizer = optim.AdamW(net.parameters(),  betas=(0.9, 0.999), lr=conf.learning_rate, weight_decay=conf.weight_decay)
     print('the init learning rate is ', conf.learning_rate)
 
@@ -116,7 +112,7 @@ def main(conf):
 
         # log
         infostr = {'Epoch:  {}   train_loss: {:.5f}  val_loss: {:.5f}  val_mean_f1_score {:.2f},val_mean_acc {:.2f}'
-                .format(epoch + 1, train_loss, val_loss, 100.* val_mean_f1_score, 100.* val_mean_acc)}
+                   .format(epoch + 1, train_loss, val_loss, 100.* val_mean_f1_score, 100.* val_mean_acc)}
 
         logging.info(infostr)
         infostr = {'F1-score-list:'}

@@ -3,7 +3,7 @@ import torch
 from torchvision import transforms
 from PIL import Image
 import torch.nn as nn
-
+import torch.nn.functional as F
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -147,11 +147,14 @@ def DISFA_infolist(list):
     # infostr = {'AU1: {:.2f} AU2: {:.2f} AU4: {:.2f} AU5: {:.2f} AU6: {:.2f} AU9: {:.2f} AU12: {:.2f} AU15: {:.2f} AU17: {:.2f} AU20: {:.2f} AU25: {:.2f} AU26: {:.2f}'.format(100.*list[0], 100.*list[1], 100.*list[2], 100.*list[3], 100.*list[4], 100.*list[5], 100.*list[6], 100.*list[7], 100.*list[8], 100.*list[9], 100.*list[10], 100.*list[11])}
     return infostr
 
-def UNBC_infolist(list):
+def UNBC_infolist(list, use_disfa=True):
     # infostr = {'AU4: {:.2f} AU6/7: {:.2f} AU9/10: {:.2f} AU43: {:.2f} '.format(100.*list[0],100.*list[1],100.*list[2],100.*list[3])}
     # infostr = {'AU4: {:.2f} AU6: {:.2f} AU7: {:.2f} AU9: {:.2f} AU10: {:.2f} AU12: {:.2f} AU20: {:.2f} AU25: {:.2f} AU26: {:.2f} AU43: {:.2f} '.format(100.*list[0],100.*list[1],100.*list[2],100.*list[3],100.*list[4],100.*list[5],100.*list[6],100.*list[7],100.*list[8],100.*list[9])}
     # disfa processed
-    infostr = {'AU1: {:.2f} AU2: {:.2f} AU4: {:.2f}  AU6: {:.2f} AU9: {:.2f} AU12: {:.2f}  AU25: {:.2f} AU26: {:.2f} '.format(100.*list[0],100.*list[1],100.*list[2],100.*list[3],100.*list[4],100.*list[5],100.*list[6],100.*list[7])}
+    if use_disfa:
+        infostr = {'AU1: {:.2f} AU2: {:.2f} AU4: {:.2f}  AU6: {:.2f} AU9: {:.2f} AU12: {:.2f}  AU25: {:.2f} AU26: {:.2f} '.format(100.*list[0],100.*list[1],100.*list[2],100.*list[3],100.*list[4],100.*list[5],100.*list[6],100.*list[7])}
+    else:
+        infostr = {'AU4: {:.2f} AU6: {:.2f} AU7: {:.2f} AU9: {:.2f} AU10: {:.2f} AU12: {:.2f} AU20: {:.2f} AU25: {:.2f} AU26: {:.2f} AU43: {:.2f} '.format(100.*list[0],100.*list[1],100.*list[2],100.*list[3],100.*list[4],100.*list[5],100.*list[6],100.*list[7],100.*list[8],100.*list[9])}
     return infostr
 
 def UNBC_pain_infolist(list):
@@ -285,6 +288,9 @@ class WeightedAsymmetricLoss(nn.Module):
         # x = x[:, 2:]
         # y = y[:, 2:]
 
+        if self.weight is not None:
+            self.weight = self.weight.to(x.device)
+
         xs_pos = x
         xs_neg = 1 - x
 
@@ -352,6 +358,51 @@ class WeightedCrossEntropyLoss(nn.Module):
         loss = loss.sum(dim=-1).mean()
         return loss
 
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        """
+        Focal Loss for classification tasks.
+
+        Args:
+            alpha (float): Weighting factor for class imbalance (optional).
+            gamma (float): Focusing parameter for hard examples.
+            reduction (str): Specifies reduction to apply to loss ('none', 'mean', or 'sum').
+        """
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, logits, targets):
+        """
+        Forward pass for Focal Loss.
+
+        Args:
+            logits (Tensor): Predicted logits of shape [batch_size, num_classes].
+            targets (Tensor): Ground truth labels (for binary: one-hot or 0/1, for multi-class: class indices).
+
+        Returns:
+            Calculated Focal Loss.
+        """
+        # Compute probabilities using softmax for multi-class or sigmoid for binary
+        if logits.shape[-1] > 1:  # Multi-class
+            probs = F.softmax(logits, dim=-1)
+        else:  # Binary
+            probs = torch.sigmoid(logits)
+
+        # Compute the focal loss
+        pt = probs * targets + (1 - probs) * (1 - targets)  # p_t
+        logpt = torch.log(pt.clamp(min=1e-8))  # log(p_t)
+        focal_loss = - self.alpha * ((1 - pt) ** self.gamma) * logpt
+
+        # Reduce the loss (mean, sum, or return as-is)
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:  # 'none'
+            return focal_loss
 
 class WeightedMSELoss(nn.Module):
     def __init__(self, weight=None):
