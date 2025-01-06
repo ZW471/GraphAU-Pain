@@ -15,7 +15,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="train_stage1.py" />
-    <option name="PARAMETERS" value="--dataset UNBC --arc resnet50 --exp-name resnet50_first_stage -b 16 -lr 0.00001 --fold 1 --crop-size 172 --resume results/resnet50_second_stage/disfa_pretrained/MEFARG_resnet50_DISFA_fold2.pth" />
+    <option name="PARAMETERS" value="--dataset UNBC --arc resnet50 --exp-name disfa_sft -b 16 -lr 0.00001 --fold 1 --crop-size 172 --resume results/disfa_sft/disfa_pretrained/MEFARG_resnet50_DISFA_fold3.pth" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

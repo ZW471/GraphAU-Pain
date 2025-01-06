@@ -15,7 +15,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pain_estimation_full.py" />
-    <option name="PARAMETERS" value="--dataset UNBC --arc resnet50 --exp-name full_network -b 64 -lr 0.0001 --fold 1 --crop-size 172 --resume results/disfa_sft/disfa_pretrained/MEFARG_resnet50_DISFA_fold2.pth" />
+    <option name="PARAMETERS" value="--dataset UNBC --arc resnet50 --exp-name full_network -b 64 -lr 0.0001 --fold 1 --crop-size 172 --resume results/disfa_sft/bs_16_seed_0_lr_1e-05/epoch3_model_fold1.pth" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />
