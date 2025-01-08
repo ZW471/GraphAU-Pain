@@ -82,7 +82,7 @@ def main(conf):
     # data
     train_loader,val_loader,train_data_num,val_data_num = get_dataloader(conf)
     logging.info("Fold: [{} | {}  val_data_num: {} ]".format(conf.fold, conf.N_fold, val_data_num))
-    net = FullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc)
+    net = BackboneOnly(num_classes=conf.num_classes, backbone=conf.arc)
 
     # resume
     if conf.resume != '':

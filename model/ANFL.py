@@ -332,7 +332,7 @@ class AuAndPeMEFARG(nn.Module):
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.fc = nn.Sequential(
-            nn.Linear(85, 32),
+            nn.Linear(72, 32),
             nn.ReLU(),
             nn.Linear(32, 2 if binary else 3)
         )
