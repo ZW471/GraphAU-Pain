@@ -135,7 +135,7 @@ class HeadPEAU(nn.Module):
 
         # Self-connection
         sc = self.sc
-        sc = self.relu(sc)  # Activation applied on self-connection
+        sc = self.relu(sc)
         sc = F.normalize(sc, p=2, dim=-1)
 
         # Class label calculation
