@@ -6,8 +6,9 @@ This repository contains tools and scripts for training models and performing pa
 
 The project consists of the following main scripts:
 
-1. **`train_stage1.py`**: A script to perform the first stage of training (pretraining and fine-tuning the AU representation module) with configurable model architectures and parameters.
-2. **`pain_estimation_full.py`**: A script to train the model for pain estimation, supporting advanced configurations such as resuming from a checkpoint.
+1. **`train_stage1.py`**: A script to perform the first stage of training (pretraining and fine-tuning the AU representation module) with configurable model architectures and parameters. Use **[UNBC_calculate_AU_class_weights.py](tool/UNBC_calculate_AU_class_weights.py)** to calculate AU class weights before running this script.
+2. **`pain_estimation_full.py`**: A script to train the model for pain estimation, supporting advanced configurations such as resuming from a checkpoint. Use **[UNBC_calculate_pspi_class_weights.py](tool/UNBC_calculate_pspi_class_weights.py)** to calculate pain class weights before running this script.
+
 
 ## Requirements
 
@@ -15,8 +16,8 @@ Ensure you meet the following requirements before running the scripts:
 
 - Python 3.9+
 - Installed dependencies for the project environment.
-- Access to the UNBC dataset, and store your processed dataset in `data\UNBC` folder, and use `img` and `list` subfolder to store the images and labels.
-- Pretrained weights for AU recognition module from [ME-GraphAU](https://github.com/CVI-SZU/ME-GraphAU?tab=readme-ov-file).
+- Access to the UNBC dataset, and store your processed dataset in `data\UNBC` folder, and use `img` and `list` subfolder to store the images and labels. Sample files are provided.
+- Pretrained weights for CNN backbone and AU recognition module from [ME-GraphAU](https://github.com/CVI-SZU/ME-GraphAU?tab=readme-ov-file).
 
 ## Usage
 
