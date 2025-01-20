@@ -6,8 +6,8 @@ This repository contains tools and scripts for training models and performing pa
 
 The project consists of the following main scripts:
 
-1. **`train_stage1.py`**: A script to perform the first stage of training using the UNBC dataset with configurable model architectures and parameters.
-2. **`pain_estimation_full.py`**: A script to perform pain estimation using a pre-trained model, supporting advanced configurations such as resuming from a checkpoint.
+1. **`train_stage1.py`**: A script to perform the first stage of training (pretraining and fine-tuning the AU representation module) with configurable model architectures and parameters.
+2. **`pain_estimation_full.py`**: A script to train the model for pain estimation, supporting advanced configurations such as resuming from a checkpoint.
 
 ## Requirements
 
@@ -75,6 +75,5 @@ This project is licensed under [MIT License].
 
 ## Acknowledgements
 
-The project utilizes:
-- The UNBC dataset.
-- `resnet50` architecture for model training and evaluation.
+This study involved secondary analyses of an existing dataset that has been described and cited accordingly.
+No human subject data are collected in this study. All experiments and analysis are conducted on public available dataset that has been described and cited accordingly. Implementation code are open source, including preprocessing, model training, and post-hoc analysis, via this repository. The AU representation learning module is an adapted version of the ANFL module from the [ME-GraphAU](https://github.com/CVI-SZU/ME-GraphAU?tab=readme-ov-file) AU occurrence prediction model.
