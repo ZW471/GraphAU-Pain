@@ -15,7 +15,8 @@ Ensure you meet the following requirements before running the scripts:
 
 - Python 3.9+
 - Installed dependencies for the project environment.
-- Access to the UNBC dataset.
+- Access to the UNBC dataset, and store your processed dataset in `data\UNBC` folder, and use `img` and `list` subfolder to store the images and labels.
+- Pretrained weights for AU recognition module from [ME-GraphAU](https://github.com/CVI-SZU/ME-GraphAU?tab=readme-ov-file).
 
 ## Usage
 
@@ -68,6 +69,7 @@ For example:
 
 - Set the environment variable `PYTHONUNBUFFERED=1` to ensure real-time logging and debugging.
 - Use the provided run configurations in the `.run.xml` files to set up your IDE (e.g., PyCharm) for quick and error-free execution.
+- the lists of images used in fine-tuning and training is available in `data_paths/`
 
 ## License
 
