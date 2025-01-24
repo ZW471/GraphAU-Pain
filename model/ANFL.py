@@ -10,13 +10,14 @@ from .basic_block import *
 
 
 class GNN(nn.Module):
-    def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots'):
+    def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots', debug=False):
         super(GNN, self).__init__()
         # in_channels: dim of node feature
         # num_classes: num of nodes
         # neighbor_num: K in paper and we select the top-K nearest neighbors for each node feature.
         # metric: metric for assessing node similarity. Used in FGG module to build a dynamical graph
         # X' = ReLU(X + BN(V(X) + A x U(X)) )
+        self.debug = debug
 
         self.in_channels = in_channels
         self.num_classes = num_classes
@@ -66,6 +67,9 @@ class GNN(nn.Module):
         A = normalize_digraph(adj)
         aggregate = torch.einsum('b i j, b j k->b i k', A, self.V(x))
         x = self.relu(x + self.bnv(aggregate + self.U(x)))
+        if self.debug:
+            return x, adj
+
         return x
 
 
@@ -104,8 +108,9 @@ class Head(nn.Module):
 
 
 class HeadPEAU(nn.Module):
-    def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots'):
+    def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots', debug=False):
         super(HeadPEAU, self).__init__()
+        self.debug = debug
         self.in_channels = in_channels
         self.num_classes = num_classes
         class_linear_layers = []
@@ -113,13 +118,14 @@ class HeadPEAU(nn.Module):
             layer = LinearBlock(self.in_channels, self.in_channels)
             class_linear_layers.append(layer)
         self.class_linears = nn.ModuleList(class_linear_layers)
-        self.gnn = GNN(self.in_channels, self.num_classes, neighbor_num=neighbor_num, metric=metric)
+        self.gnn = GNN(self.in_channels, self.num_classes, neighbor_num=neighbor_num, metric=metric, debug=debug)
         self.sc = nn.Parameter(torch.FloatTensor(torch.zeros(self.num_classes, self.in_channels)))
         self.relu = nn.ReLU()
 
         nn.init.xavier_uniform_(self.sc)
 
     def forward(self, x):
+
         # AFG
         f_u = []
         for i, layer in enumerate(self.class_linears):
@@ -128,7 +134,10 @@ class HeadPEAU(nn.Module):
         f_v = f_u.mean(dim=-2)  # Aggregated feature representation
 
         # FGG
-        f_v = self.gnn(f_v)
+        if self.debug:
+            f_v, adj = self.gnn(f_v)
+        else:
+            f_v = self.gnn(f_v)
 
         # Extract dimensions
         b, n, c = f_v.shape  # b: batch size, n: num of nodes (AUs), c: dim of node feature
@@ -146,7 +155,11 @@ class HeadPEAU(nn.Module):
         # Obtain the PE score by performing global sum pooling over the node features in the GNN output
         pe_score = f_v.sum(dim=1)  # Sum pooling along the node dimension
 
-        return cl, pe_score
+        if self.debug:
+            return cl, pe_score, adj
+        else:
+            return cl, pe_score
+
 
 class MEFARG(nn.Module):
     def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots'):
@@ -265,7 +278,7 @@ class FullPictureMEFARG(nn.Module):
         self.global_linear = LinearBlock(self.in_channels, self.out_channels)
         self.head = HeadPEAU(self.out_channels, num_classes, neighbor_num, metric)
 
-        self.fc_au = nn.Linear(8, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_au = nn.Linear(num_classes, 36)  # Fully connected layer for pain intensity mapping
         self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
         self.fc_pe = nn.Linear(512, 36)
         self.relu = nn.ReLU()
@@ -296,6 +309,70 @@ class FullPictureMEFARG(nn.Module):
         cl = torch.cat((cl, pe), dim=1)
         cl = self.fc(cl)
         return cl
+
+class FullPictureMEFARGVisualize(nn.Module):
+    def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots', binary=False):
+        super(FullPictureMEFARGVisualize, self).__init__()
+        if 'transformer' in backbone:
+            if backbone == 'swin_transformer_tiny':
+                self.backbone = swin_transformer_tiny()
+            elif backbone == 'swin_transformer_small':
+                self.backbone = swin_transformer_small()
+            else:
+                self.backbone = swin_transformer_base()
+            self.in_channels = self.backbone.num_features
+            self.out_channels = self.in_channels // 2
+            self.backbone.head = None
+        elif 'resnet' in backbone:
+            if backbone == 'resnet18':
+                self.backbone = resnet18()
+            elif backbone == 'resnet101':
+                self.backbone = resnet101()
+            else:
+                self.backbone = resnet50()
+            self.in_channels = self.backbone.fc.weight.shape[1]
+            self.out_channels = self.in_channels // 4
+            self.backbone.fc = None
+        else:
+            raise Exception("Error: wrong backbone name: ", backbone)
+
+        self.global_linear = LinearBlock(self.in_channels, self.out_channels)
+        self.head = HeadPEAU(self.out_channels, num_classes, neighbor_num, metric, debug=True)
+
+        self.fc_au = nn.Linear(num_classes, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_pe = nn.Linear(512, 36)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        if binary:
+            self.fc = nn.Linear(72, 2)
+        else:
+            self.fc = nn.Linear(72, 3)  # Fully connected layer for pain intensity mapping
+    def forward(self, x):
+        # x: b d c
+        bb = self.backbone(x)
+        x = self.global_linear(bb)
+
+        bb = self.fc_bb(bb)
+        bb = self.relu(bb)
+
+        au, pe, adj = self.head(x)
+        au_n = au.clone()
+        au = self.fc_au(au)
+        au = self.relu(au)
+        au = au.unsqueeze(1)
+
+        pe = self.fc_pe(pe)
+        au_g = pe.clone()
+        pe = self.relu(pe)
+
+        cl = torch.matmul(au, bb)
+        bb_au = cl
+        cl = cl.squeeze(1)
+        cl = self.relu(cl)
+        cl = torch.cat((cl, pe), dim=1)
+        cl = self.fc(cl)
+        return cl, au_n, au_g, bb, bb_au, adj
 
 class AuAndPeMEFARG(nn.Module):
     def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots', binary=False):
