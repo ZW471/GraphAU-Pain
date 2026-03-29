@@ -604,7 +604,7 @@ def swin_transformer_tiny(pretrained=True, **kwargs):
     model = SwinTransformer(embed_dim=96,depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24],
                  window_size=7,drop_path_rate=0.2, **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_tiny']))['model'])
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_tiny']), weights_only=False)['model'])
     return model
 
 
@@ -619,7 +619,7 @@ def swin_transformer_small(pretrained=True, **kwargs):
     model = SwinTransformer(embed_dim=96, depths=[ 2, 2, 18, 2 ], num_heads=[ 3, 6, 12, 24 ],
                  window_size=7,drop_path_rate=0.3, **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_small']))['model'])
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_small']), weights_only=False)['model'])
     return model
 
 
@@ -634,7 +634,7 @@ def swin_transformer_base(pretrained=True, **kwargs):
     model = SwinTransformer(embed_dim=128, depths=[ 2, 2, 18, 2 ], num_heads=[ 4, 8, 16, 32 ],
                  window_size=7,drop_path_rate=0.5, **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_base']))['model'])
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['swin_transformer_base']), weights_only=False)['model'])
     return model
 
 

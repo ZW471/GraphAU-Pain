@@ -263,7 +263,7 @@ class image_test(object):
 
 
 def load_state_dict(model,path):
-    checkpoints = torch.load(path,map_location=torch.device('cpu'))
+    checkpoints = torch.load(path,map_location=torch.device('cpu'), weights_only=False)
     state_dict = checkpoints['state_dict']
     from collections import OrderedDict
     new_state_dict = OrderedDict()
@@ -271,8 +271,16 @@ def load_state_dict(model,path):
         if 'module.' in k:
             k = k[7:]  # remove `module.`
         new_state_dict[k] = v
+    # Filter out keys with shape mismatches to allow cross-architecture transfer
+    model_state = model.state_dict()
+    filtered_state_dict = OrderedDict()
+    for k, v in new_state_dict.items():
+        if k in model_state and v.shape != model_state[k].shape:
+            print(f"Skipping '{k}': shape {v.shape} vs {model_state[k].shape}")
+            continue
+        filtered_state_dict[k] = v
     # load params
-    model.load_state_dict(new_state_dict,strict=False)
+    model.load_state_dict(filtered_state_dict,strict=False)
     return model
 
 

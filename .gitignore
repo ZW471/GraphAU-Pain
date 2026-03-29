@@ -9,3 +9,4 @@
 *.zip
 .claude
 .venv
+__pycache__

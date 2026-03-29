@@ -168,7 +168,7 @@ def resnet18(pretrained=True, **kwargs):
     """
     model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet18'])))
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet18']), weights_only=False))
     return model
 
 
@@ -180,7 +180,7 @@ def resnet34(pretrained=True, **kwargs):
     """
     model = ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet34'])))
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet34']), weights_only=False))
     return model
 
 
@@ -192,7 +192,7 @@ def resnet50(pretrained=True, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet50'])))
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet50']), weights_only=False))
     return model
 
 
@@ -204,7 +204,7 @@ def resnet101(pretrained=True, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet101'])))
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet101']), weights_only=False))
     return model
 
 
@@ -216,5 +216,5 @@ def resnet152(pretrained=True, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet152'])))
+        model.load_state_dict(torch.load(os.path.join(models_dir, model_name['resnet152']), weights_only=False))
     return model
