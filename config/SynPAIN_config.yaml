@@ -1,0 +1,8 @@
+# SynPAIN dataset configuration
+# Metadata CSV must live at <dataset_path>/metadata.csv
+# (or override with --metadata_file on the command line)
+dataset_path: 'data/SynPAIN'
+num_classes: 8          # AU nodes — same count as DISFA/UNBC for weight transfer
+neighbor_num: 4
+num_pain_classes: 2     # binary: 0=no-pain, 1=pain
+metadata_file: 'metadata.csv'

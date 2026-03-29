@@ -49,6 +49,19 @@ parser.add_argument('--prediction', default='', type=str, metavar='path', help='
 parser.add_argument('--binary', default=False, type=bool, help='binary classification or not')
 
 parser.add_argument('--ori_unbc', default=False, type=bool, help='use original unbc, otherwise disfa labeled')
+
+# --- Extension flags for SynPAIN / DeltaGraph / demographic evaluation ---
+parser.add_argument('--use_pair_input', action='store_true',
+                    help='enable pair-input mode (x_neu + x_expr); used for SynPAIN pretraining')
+parser.add_argument('--use_delta_graph', action='store_true',
+                    help='compute node-level ΔGraph (H_expr - H_neu); requires use_pair_input')
+parser.add_argument('--training_stage', default='unbc_finetune', type=str,
+                    choices=['disfa_pretrain', 'synpain_pretrain', 'unbc_finetune'],
+                    help='training stage selector')
+parser.add_argument('--eval_by_group', action='store_true',
+                    help='compute per-demographic-subgroup metrics during validation')
+parser.add_argument('--save_demographics', action='store_true',
+                    help='save demographic evaluation results to JSON/CSV in outdir')
 # ------------------------------
 
 
@@ -103,6 +116,11 @@ def get_config():
 
     elif cfg.dataset == 'UNBC':
         with open('config/UNBC_config.yaml', 'r') as f:
+            datasets_cfg = yaml.load(f, Loader=yaml.FullLoader)
+            datasets_cfg = edict(datasets_cfg)
+
+    elif cfg.dataset == 'SynPAIN':
+        with open('config/SynPAIN_config.yaml', 'r') as f:
             datasets_cfg = yaml.load(f, Loader=yaml.FullLoader)
             datasets_cfg = edict(datasets_cfg)
 

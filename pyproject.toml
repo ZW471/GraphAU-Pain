@@ -1,0 +1,27 @@
+[project]
+name = "graphau-pain"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.6.0",
+    "torchvision",
+    "pillow",
+    "numpy",
+    "tqdm",
+    "timm",
+    "easydict",
+    "pyyaml",
+    "scikit-learn",
+]
+
+[tool.uv]
+extra-index-url = ["https://download.pytorch.org/whl/cu126"]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true

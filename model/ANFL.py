@@ -108,9 +108,13 @@ class Head(nn.Module):
 
 
 class HeadPEAU(nn.Module):
-    def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots', debug=False):
+    def __init__(self, in_channels, num_classes, neighbor_num=4, metric='dots', debug=False,
+                 return_node_features=False):
         super(HeadPEAU, self).__init__()
         self.debug = debug
+        # If True, forward() also returns f_v [B, nAU, out_channels] for delta graph computation.
+        # Default False keeps the original return signature intact.
+        self.return_node_features = return_node_features
         self.in_channels = in_channels
         self.num_classes = num_classes
         class_linear_layers = []
@@ -153,11 +157,17 @@ class HeadPEAU(nn.Module):
 
         # **PE Score**
         # Obtain the PE score by performing global sum pooling over the node features in the GNN output
-        pe_score = f_v.sum(dim=1)  # Sum pooling along the node dimension
+        pe_score = f_v.sum(dim=1)  # Sum pooling along the node dimension  [B, c]
 
-        if self.debug:
-            return cl, pe_score, adj
+        if self.return_node_features:
+            # Extended return: also expose per-AU node embeddings for delta graph.
+            # f_v: [B, nAU, out_channels]
+            if self.debug:
+                return cl, pe_score, f_v, adj
+            return cl, pe_score, f_v
         else:
+            if self.debug:
+                return cl, pe_score, adj
             return cl, pe_score
 
 
@@ -649,3 +659,104 @@ class PainEstimation(nn.Module):
         x = self.global_linear(x)
         pain_intensity = self.head(x)
         return pain_intensity * 16
+
+
+# ===========================================================================
+# DeltaMEFARG — Pair-input model for SynPAIN pretraining (ΔGraph extension)
+# ===========================================================================
+
+class DeltaMEFARG(nn.Module):
+    """
+    Delta Graph model for pair-input (neutral + expressive) SynPAIN pretraining.
+
+    Architecture:
+        1. Shared backbone + global_linear encodes x_neu and x_expr.
+        2. Shared HeadPEAU (AU graph) runs on both encodings.
+        3. Node-level delta:  H_delta = H_expr - H_neu      [B, nAU, d]
+        4. Mean-pool delta:   delta_pooled = H_delta.mean(1) [B, d]
+        5. Linear classifier: out = fc(delta_pooled)         [B, num_pain_classes]
+
+    When use_delta_graph=False falls back to:
+        delta_pooled = pe_score_expr - pe_score_neu  [B, d]  (graph-level only)
+
+    Single-frame mode NOT supported here — use FullPictureMEFARG for that.
+    Backbone weights can be loaded from a DISFA/stage1 checkpoint via load_state_dict().
+    """
+
+    def __init__(self, num_classes=8, backbone='swin_transformer_base',
+                 neighbor_num=4, metric='dots', num_pain_classes=2,
+                 use_delta_graph=True):
+        super(DeltaMEFARG, self).__init__()
+        self.use_delta_graph = use_delta_graph
+
+        # --- Backbone (identical setup to FullPictureMEFARG) ---
+        if 'transformer' in backbone:
+            if backbone == 'swin_transformer_tiny':
+                self.backbone = swin_transformer_tiny()
+            elif backbone == 'swin_transformer_small':
+                self.backbone = swin_transformer_small()
+            else:
+                self.backbone = swin_transformer_base()
+            self.in_channels = self.backbone.num_features
+            self.out_channels = self.in_channels // 2
+            self.backbone.head = None
+        elif 'resnet' in backbone:
+            if backbone == 'resnet18':
+                self.backbone = resnet18()
+            elif backbone == 'resnet101':
+                self.backbone = resnet101()
+            else:
+                self.backbone = resnet50()
+            self.in_channels = self.backbone.fc.weight.shape[1]
+            self.out_channels = self.in_channels // 4
+            self.backbone.fc = None
+        else:
+            raise Exception("Error: wrong backbone name: ", backbone)
+
+        self.global_linear = LinearBlock(self.in_channels, self.out_channels)
+
+        # Shared AU graph head — exposes per-AU node features for delta computation
+        self.head = HeadPEAU(
+            self.out_channels, num_classes, neighbor_num, metric,
+            return_node_features=True,  # needed for node-level delta
+        )
+
+        # Classifier on pooled delta: [B, out_channels] → [B, num_pain_classes]
+        self.classifier = nn.Linear(self.out_channels, num_pain_classes)
+
+    def encode(self, x):
+        """
+        Encode a single image frame through the shared backbone + AU graph head.
+        Args:
+            x: image tensor [B, 3, H, W]
+        Returns:
+            au_logits:  [B, nAU]
+            pe_score:   [B, out_channels]  (sum-pooled node features)
+            node_feats: [B, nAU, out_channels]
+        """
+        feat = self.backbone(x)          # [B, in_channels]
+        feat = self.global_linear(feat)  # [B, out_channels]
+        return self.head(feat)           # (au_logits, pe_score, node_feats)
+
+    def forward(self, x_expr, x_neu):
+        """
+        Pair-input forward pass for delta graph modeling.
+        Args:
+            x_expr: expressive frame [B, 3, H, W]
+            x_neu:  neutral frame    [B, 3, H, W]
+        Returns:
+            logits: pain classification logits [B, num_pain_classes]
+        """
+        # Encode both frames with shared weights
+        _, pe_expr, f_v_expr = self.encode(x_expr)  # f_v_expr: [B, nAU, d]
+        _, pe_neu,  f_v_neu  = self.encode(x_neu)   # f_v_neu:  [B, nAU, d]
+
+        if self.use_delta_graph:
+            # Node-level ΔGraph (preferred): captures per-AU activation change
+            h_delta      = f_v_expr - f_v_neu        # [B, nAU, d]
+            delta_pooled = h_delta.mean(dim=1)       # [B, d]  (mean over AU nodes)
+        else:
+            # Graph-level fallback: difference of sum-pooled graph embeddings
+            delta_pooled = pe_expr - pe_neu          # [B, d]
+
+        return self.classifier(delta_pooled)         # [B, num_pain_classes]

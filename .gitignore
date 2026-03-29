@@ -1,8 +1,11 @@
 !data/UNBC/img/*
 !data/UNBC/list/*
 /checkpoints/
-/img/
+/data
 /results/
 /.idea/
 /.run/
 /sandbox/
+*.zip
+.claude
+.venv
