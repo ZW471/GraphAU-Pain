@@ -12,13 +12,14 @@ The baseline is fully preserved — all new functionality is opt-in via config f
 3. [Architecture overview](#architecture-overview)
 4. [SynPAIN metadata format](#synpain-metadata-format)
 5. [Running the extension](#running-the-extension)
-6. [Demographic bias evaluation](#demographic-bias-evaluation)
-7. [New CLI flags](#new-cli-flags)
-8. [Checkpoints](#checkpoints)
-9. [File change summary](#file-change-summary)
-10. [Backward compatibility](#backward-compatibility)
-11. [Known limitations](#known-limitations)
-12. [Troubleshooting](#troubleshooting)
+6. [ΔGraph on UNBC+DISFA](#δgraph-on-unbcdisfa)
+7. [Demographic bias evaluation](#demographic-bias-evaluation)
+8. [New CLI flags](#new-cli-flags)
+9. [Checkpoints](#checkpoints)
+10. [File change summary](#file-change-summary)
+11. [Backward compatibility](#backward-compatibility)
+12. [Known limitations](#known-limitations)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -29,6 +30,7 @@ The baseline is fully preserved — all new functionality is opt-in via config f
 | SynPAIN dataset loader (pair-input + demographics) | `dataset_synpain.py` |
 | Pair-input ΔGraph model | `model/ANFL.py` — `DeltaMEFARG` class |
 | SynPAIN pretraining script | `train_synpain.py` |
+| ΔGraph evaluation on UNBC+DISFA | `pain_estimation_delta.py` |
 | Demographic bias evaluation | `eval_demographics.py` |
 | SynPAIN dataset config | `config/SynPAIN_config.yaml` |
 | New CLI flags | `conf.py` |
@@ -220,6 +222,72 @@ python pain_estimation_full.py \
 
 ---
 
+## ΔGraph on UNBC+DISFA
+
+`pain_estimation_delta.py` tests whether the ΔGraph representation improves pain
+estimation on the original UNBC dataset (the same task as `pain_estimation_full.py`).
+
+### How it works
+
+UNBC provides single frames, not pairs. The script auto-constructs pseudo-pairs at
+dataset-init time:
+
+1. Frames are grouped by **subject ID** (first directory component of each image path).
+2. Per subject, the **neutral reference** is the first frame whose pspi class == 0
+   (no pain). If no class-0 frame exists in the split, the lowest available class is used.
+3. Every frame in the split is then paired with its subject's fixed neutral.
+4. The neutral always receives the **test-time transform** (center crop, no jitter),
+   acting as a stable reference; the expressive frame gets standard training augmentation.
+
+### Model
+
+`DeltaMEFARG` is used directly. It shares the same backbone + `global_linear` +
+`HeadPEAU` architecture as `FullPictureMEFARG`, so **DISFA-pretrained backbone
+weights load cleanly** via `--resume` + `strict=False`. The only new parameters are
+in the final `Linear(out_channels, num_pain_classes)` classifier.
+
+### Usage
+
+```bash
+# Full node-level ΔGraph (recommended)
+python pain_estimation_delta.py --dataset UNBC --fold 1 \
+    --arc resnet50 \
+    --resume path/to/disfa_pretrained.pth \
+    --use_delta_graph \
+    --exp-name delta_graph_fold1
+
+# Ablation: graph-level delta (PE-score difference, omit --use_delta_graph)
+python pain_estimation_delta.py --dataset UNBC --fold 1 \
+    --arc resnet50 \
+    --resume path/to/disfa_pretrained.pth \
+    --exp-name pe_score_delta_fold1
+
+# Binary classification
+python pain_estimation_delta.py --dataset UNBC --fold 1 \
+    --binary True --use_delta_graph \
+    --exp-name delta_graph_binary_fold1
+```
+
+Run all three folds for cross-validated comparison against `pain_estimation_full.py`:
+
+```bash
+for fold in 1 2 3; do
+  python pain_estimation_delta.py --dataset UNBC --fold $fold \
+      --arc resnet50 \
+      --resume path/to/disfa_pretrained.pth \
+      --use_delta_graph \
+      --exp-name delta_graph_fold${fold}
+done
+```
+
+### Outputs
+
+Identical format to `pain_estimation_full.py`: per-epoch F1 / accuracy logs and
+`epoch{N}_model_fold{K}.pth` / `cur_model_fold{K}.pth` checkpoints in
+`results/<exp-name>/`.
+
+---
+
 ## Demographic bias evaluation
 
 Evaluation runs automatically during `train_synpain.py` validation when `--eval_by_group`
@@ -344,11 +412,12 @@ Modified (2 files)
       +5 argparse flags (all default-safe for existing scripts)
       +SynPAIN branch in get_config()
 
-Added (4 files)
+Added (5 files)
 ├── config/SynPAIN_config.yaml   dataset path, AU count, pain class count
 ├── dataset_synpain.py           SynPAIN Dataset class + synpain_collate_fn
 ├── eval_demographics.py         per-subgroup metrics, bias gap, JSON/CSV output
-└── train_synpain.py             SynPAIN pretraining script
+├── train_synpain.py             SynPAIN pretraining script
+└── pain_estimation_delta.py     ΔGraph evaluation on UNBC (UNBCDelta + DeltaMEFARG)
 
 Unchanged
 ├── pain_estimation_full.py      UNBC pain classification baseline

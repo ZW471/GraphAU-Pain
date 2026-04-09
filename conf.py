@@ -62,6 +62,8 @@ parser.add_argument('--eval_by_group', action='store_true',
                     help='compute per-demographic-subgroup metrics during validation')
 parser.add_argument('--save_demographics', action='store_true',
                     help='save demographic evaluation results to JSON/CSV in outdir')
+parser.add_argument('--metadata_file', default='', type=str,
+                    help='override metadata CSV filename for SynPAIN (relative to dataset_path)')
 # ------------------------------
 
 
@@ -127,7 +129,11 @@ def get_config():
     else:
         raise Exception("Unkown Datsets:",cfg.dataset)
 
+    cli_metadata_file = cfg.get('metadata_file', '')
     cfg.update(datasets_cfg)
+    # CLI --metadata_file overrides YAML value when provided
+    if cli_metadata_file:
+        cfg.metadata_file = cli_metadata_file
     return cfg
 
 

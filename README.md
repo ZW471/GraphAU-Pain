@@ -8,6 +8,7 @@ The project consists of the following main scripts:
 
 1. **`train_stage1.py`**: A script to perform the first stage of training (pretraining and fine-tuning the AU representation module) with configurable model architectures and parameters. Use **[UNBC_calculate_AU_class_weights.py](tool/UNBC_calculate_AU_class_weights.py)** to calculate AU class weights before running this script.
 2. **`pain_estimation_full.py`**: A script to train the model for pain estimation, supporting advanced configurations such as resuming from a checkpoint. Use **[UNBC_calculate_pspi_class_weights.py](tool/UNBC_calculate_pspi_class_weights.py)** to calculate pain class weights before running this script.
+3. **`pain_estimation_delta.py`**: A script to test whether the ΔGraph (DeltaMEFARG) model improves pain estimation on UNBC. Each UNBC frame is automatically paired with a per-subject neutral reference frame; the model classifies the node-level delta between expressive and neutral AU graphs. Supports loading DISFA/AU-pretrained backbone weights via `--resume`. See [README_extension.md](README_extension.md) for details.
 
 
 ## Requirements
@@ -39,6 +40,34 @@ python train_stage1.py --dataset UNBC --arc resnet50 --exp-name train_unbc -b 16
 - `--resume`: Use this parameter for supervised fine-tuning. Provide the path to a pretrained model.
 
 You can configure additional parameters if needed.
+
+### ΔGraph Pain Estimation on UNBC Using `pain_estimation_delta.py`
+
+Tests whether the delta-graph representation (expressive − neutral AU node features) improves pain classification on UNBC. Frames are auto-paired per subject; no extra annotation is needed beyond the existing pspi list files.
+
+```bash
+# Node-level ΔGraph (full model)
+python pain_estimation_delta.py --dataset UNBC --fold 1 \
+    --arc resnet50 --exp-name delta_graph_fold1 \
+    --resume path/to/disfa_pretrained.pth \
+    --use_delta_graph
+
+# Ablation: graph-level delta (PE-score only, omit --use_delta_graph)
+python pain_estimation_delta.py --dataset UNBC --fold 1 \
+    --arc resnet50 --exp-name pe_score_delta_fold1
+
+# Binary classification
+python pain_estimation_delta.py --dataset UNBC --fold 1 \
+    --binary True --use_delta_graph \
+    --exp-name delta_graph_binary_fold1
+```
+
+#### Additional Arguments:
+- `--use_delta_graph`: Enable node-level ΔGraph (H\_expr − H\_neu). Omit for PE-score-level ablation.
+- `--binary`: Binary (pain / no-pain) classification instead of 3-class.
+- All other arguments (`--arc`, `-b`, `-lr`, `--fold`, `--resume`, etc.) are the same as `pain_estimation_full.py`.
+
+---
 
 ### Pain Estimation with Pre-trained Weights Using `pain_estimation_full.py`
 

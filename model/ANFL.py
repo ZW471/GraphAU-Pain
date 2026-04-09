@@ -289,7 +289,7 @@ class FullPictureMEFARG(nn.Module):
         self.head = HeadPEAU(self.out_channels, num_classes, neighbor_num, metric)
 
         self.fc_au = nn.Linear(num_classes, 36)  # Fully connected layer for pain intensity mapping
-        self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(self.in_channels, 36)  # Fully connected layer for pain intensity mapping
         self.fc_pe = nn.Linear(512, 36)
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -350,7 +350,7 @@ class FullPictureMEFARGVisualize(nn.Module):
         self.head = HeadPEAU(self.out_channels, num_classes, neighbor_num, metric, debug=True)
 
         self.fc_au = nn.Linear(num_classes, 36)  # Fully connected layer for pain intensity mapping
-        self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(self.in_channels, 36)  # Fully connected layer for pain intensity mapping
         self.fc_pe = nn.Linear(512, 36)
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -478,7 +478,7 @@ class RegFullPictureMEFARG(nn.Module):
         self.head = Head(self.out_channels, num_classes, neighbor_num, metric)
 
         self.fc_au = nn.Linear(8, 36)  # Fully connected layer for pain intensity mapping
-        self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(self.in_channels, 36)  # Fully connected layer for pain intensity mapping
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.fc = nn.Linear(36, 1)  # Fully connected layer for pain intensity mapping
@@ -565,7 +565,7 @@ class FullPictureMEFARGNoGNN(nn.Module):
         self.global_linear = LinearBlock(self.in_channels, self.out_channels)
         self.head = HeadNoGNN(self.out_channels, num_classes, neighbor_num, metric)
         self.fc_au = nn.Linear(8, 36)  # Fully connected layer for pain intensity mapping
-        self.fc_bb = nn.Linear(2048, 36)  # Fully connected layer for pain intensity mapping
+        self.fc_bb = nn.Linear(self.in_channels, 36)  # Fully connected layer for pain intensity mapping
         self.relu = nn.ReLU()
         self.fc = nn.Linear(36, 3)  # Fully connected layer for pain intensity mapping
     def forward(self, x):
