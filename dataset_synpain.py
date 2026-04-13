@@ -242,6 +242,10 @@ class SynPAINSingle(Dataset):
     def __getitem__(self, index):
         s = self.data_list[index]
         img = self.loader(os.path.join(self.root_path, s['expr_path']))
+        # SynPAIN images are side-by-side composites (neutral left, expressive
+        # right).  Crop the right half to get only the expressive face.
+        w, h = img.size
+        img = img.crop((w // 2, 0, w, h))
         if self.is_train:
             w, h = img.size
             offset_y = random.randint(0, max(0, h - self.crop_size))

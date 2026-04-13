@@ -1,3 +1,9 @@
+"""UNBC 3-class pain finetuning with FullPictureMEFARGGeneric.
+
+Identical to pain_estimation_full.py except it uses FullPictureMEFARGGeneric,
+which spatially pools the backbone features so any backbone/crop_size combo
+(e.g. Swin-B @ 224) works without the hard-coded 36-token assumption.
+"""
 import os
 import numpy as np
 import torch
@@ -7,40 +13,48 @@ import torch.optim as optim
 from tqdm import tqdm
 import logging
 
-from model.ANFL import MEFARG, PainEstimation, BackboneOnly, FullPictureMEFARG
+from model.ANFL import FullPictureMEFARGGeneric
 from dataset import *
 from dataset_synpain import SynPAINSingle
 from utils import *
-from conf import get_config,set_logger,set_outdir,set_env
+from conf import get_config, set_logger, set_outdir, set_env
+
 
 def get_dataloader(conf):
     print('==> Preparing data...')
     if conf.dataset == 'UNBC':
-        label_path = conf.get('label_path', '') if hasattr(conf, 'get') else getattr(conf, 'label_path', '')
-        trainset = UNBC(conf.dataset_path, train=True, fold = conf.fold, transform=image_train(crop_size=conf.crop_size), crop_size=conf.crop_size, stage = 3, label_path=label_path)
-        train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
-        valset = UNBC(conf.dataset_path, train=False, fold=conf.fold, transform=image_test(crop_size=conf.crop_size), stage = 3, label_path=label_path)
-        val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
+        label_path = getattr(conf, 'label_path', '')
+        trainset = UNBC(conf.dataset_path, train=True, fold=conf.fold,
+                        transform=image_train(crop_size=conf.crop_size),
+                        crop_size=conf.crop_size, stage=3, label_path=label_path)
+        train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True,
+                                  num_workers=conf.num_workers)
+        valset = UNBC(conf.dataset_path, train=False, fold=conf.fold,
+                      transform=image_test(crop_size=conf.crop_size), stage=3, label_path=label_path)
+        val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False,
+                                num_workers=conf.num_workers)
     elif conf.dataset == 'SynPAIN':
-        # Single-image binary pain pretraining: same FullPictureMEFARG model as
-        # the UNBC stage-3 baseline, supervised only by pain (no AU loss).
+        # Single-image binary pain pretraining: same FullPictureMEFARGGeneric
+        # model as the UNBC stage-3 baseline, supervised only by pain.
         metadata_file = getattr(conf, 'metadata_file', 'metadata.csv')
         trainset = SynPAINSingle(conf.dataset_path, split='train', metadata_file=metadata_file,
-                                 transform=image_train(crop_size=conf.crop_size), crop_size=conf.crop_size)
-        train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True, num_workers=conf.num_workers)
+                                 transform=image_train(crop_size=conf.crop_size),
+                                 crop_size=conf.crop_size)
+        train_loader = DataLoader(trainset, batch_size=conf.batch_size, shuffle=True,
+                                  num_workers=conf.num_workers)
         valset = SynPAINSingle(conf.dataset_path, split='val', metadata_file=metadata_file,
-                               transform=image_test(crop_size=conf.crop_size), crop_size=conf.crop_size)
-        val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False, num_workers=conf.num_workers)
-
+                               transform=image_test(crop_size=conf.crop_size),
+                               crop_size=conf.crop_size)
+        val_loader = DataLoader(valset, batch_size=conf.batch_size, shuffle=False,
+                                num_workers=conf.num_workers)
     return train_loader, val_loader, len(trainset), len(valset)
 
 
-# Train
-def train(conf,net,train_loader,optimizer,epoch,criterion):
+def train(conf, net, train_loader, optimizer, epoch, criterion):
     losses = AverageMeter()
     net.train()
     train_loader_len = len(train_loader)
-    for batch_idx, (inputs,  targets) in enumerate(tqdm(train_loader)):
+    for batch_idx, (inputs, targets) in enumerate(tqdm(train_loader)):
         adjust_learning_rate(optimizer, epoch, conf.epochs, conf.learning_rate, batch_idx, train_loader_len)
         targets = targets.float()
         if torch.cuda.is_available():
@@ -54,8 +68,7 @@ def train(conf,net,train_loader,optimizer,epoch,criterion):
     return losses.avg
 
 
-# Val
-def val(net,val_loader,criterion):
+def val(net, val_loader, criterion):
     losses = AverageMeter()
     net.eval()
     statistics_list = None
@@ -81,32 +94,28 @@ def main(conf):
         else:
             dataset_info = UNBC_pain_infolist
     elif conf.dataset == 'SynPAIN':
-        # SynPAIN is binary by construction; reuse the UNBC binary infolist
-        # (it just labels two slots: No-Pain / Pain).
         dataset_info = UNBC_pain_infolist_binary
 
     start_epoch = 0
-    # data
-    train_loader,val_loader,train_data_num,val_data_num = get_dataloader(conf)
+    train_loader, val_loader, train_data_num, val_data_num = get_dataloader(conf)
     if conf.dataset == 'SynPAIN':
-        # Inverse-frequency weights from the train split (SynPAIN has no
-        # precomputed weight file).
+        # Inverse-frequency weights from the train split.
         train_labels = np.array([s['label'] for s in train_loader.dataset.data_list])
         n_pos = float((train_labels == 1).sum())
         n_neg = float((train_labels == 0).sum())
         total = max(1.0, n_pos + n_neg)
-        # Normalised so weights average ~1 across the two classes.
         train_weight = torch.tensor([total / (2 * max(1.0, n_neg)),
                                      total / (2 * max(1.0, n_pos))], dtype=torch.float32)
     else:
         label_path = getattr(conf, 'label_path', '')
         weight_dir = os.path.join(conf.dataset_path, 'list', label_path) if label_path else os.path.join(conf.dataset_path, 'list')
-        train_weight = torch.from_numpy(np.loadtxt(os.path.join(weight_dir, conf.dataset+'_pspi_w_fold'+str(conf.fold)+'.txt')))
+        train_weight = torch.from_numpy(np.loadtxt(
+            os.path.join(weight_dir, conf.dataset + '_pspi_w_fold' + str(conf.fold) + '.txt')))
 
     logging.info("Fold: [{} | {}  val_data_num: {} ]".format(conf.fold, conf.N_fold, val_data_num))
 
-    net = FullPictureMEFARG(num_classes=conf.num_classes, backbone=conf.arc, neighbor_num=conf.neighbor_num, metric=conf.metric, binary=conf.binary)
-    # resume
+    net = FullPictureMEFARGGeneric(num_classes=conf.num_classes, backbone=conf.arc,
+                                   neighbor_num=conf.neighbor_num, metric=conf.metric, binary=conf.binary)
     if conf.resume != '':
         logging.info("Resume form | {} ]".format(conf.resume))
         net = load_state_dict(net, conf.resume)
@@ -115,61 +124,44 @@ def main(conf):
         net = nn.DataParallel(net).cuda()
 
     criterion = WeightedCrossEntropyLoss(weight=train_weight)
-    optimizer = optim.AdamW(net.parameters(),  betas=(0.9, 0.999), lr=conf.learning_rate, weight_decay=conf.weight_decay)
+    optimizer = optim.AdamW(net.parameters(), betas=(0.9, 0.999), lr=conf.learning_rate, weight_decay=conf.weight_decay)
     print('the init learning rate is ', conf.learning_rate)
 
     best_val_f1 = -1.0
-    #train and val
     for epoch in range(start_epoch, conf.epochs):
         lr = optimizer.param_groups[0]['lr']
         logging.info("Epoch: [{} | {} LR: {} ]".format(epoch + 1, conf.epochs, lr))
-        train_loss = train(conf,net,train_loader,optimizer,epoch,criterion)
+        train_loss = train(conf, net, train_loader, optimizer, epoch, criterion)
         val_loss, val_mean_f1_score, val_f1_score, val_mean_acc, val_acc = val(net, val_loader, criterion)
 
-        # log
         infostr = {'Epoch:  {}   train_loss: {:.5f}  val_loss: {:.5f}  val_mean_f1_score {:.2f},val_mean_acc {:.2f}'
-                   .format(epoch + 1, train_loss, val_loss, 100.* val_mean_f1_score, 100.* val_mean_acc)}
-
+                   .format(epoch + 1, train_loss, val_loss, 100. * val_mean_f1_score, 100. * val_mean_acc)}
         logging.info(infostr)
-        infostr = {'F1-score-list:'}
-        logging.info(infostr)
-        infostr = dataset_info(val_f1_score)
-        logging.info(infostr)
-        infostr = {'Acc-list:'}
-        logging.info(infostr)
-        infostr = dataset_info(val_acc)
-        logging.info(infostr)
-
-        # save checkpoints
-        if (epoch+1) % 1 == 0:
-            checkpoint = {
-                'epoch': epoch,
-                'state_dict': net.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            }
-            torch.save(checkpoint, os.path.join(conf['outdir'], 'epoch' + str(epoch + 1) + '_model_fold' + str(conf.fold) + '.pth'))
+        logging.info({'F1-score-list:'})
+        logging.info(dataset_info(val_f1_score))
+        logging.info({'Acc-list:'})
+        logging.info(dataset_info(val_acc))
 
         checkpoint = {
             'epoch': epoch,
             'state_dict': net.state_dict(),
             'optimizer': optimizer.state_dict(),
         }
-        torch.save(checkpoint, os.path.join(conf['outdir'], 'cur_model_fold' + str(conf.fold) + '.pth'))
+        torch.save(checkpoint, os.path.join(conf['outdir'],
+                   'epoch' + str(epoch + 1) + '_model_fold' + str(conf.fold) + '.pth'))
+        torch.save(checkpoint, os.path.join(conf['outdir'],
+                   'cur_model_fold' + str(conf.fold) + '.pth'))
 
         # Track best epoch by val_mean_f1_score for downstream resume.
         if val_mean_f1_score > best_val_f1:
             best_val_f1 = val_mean_f1_score
-            torch.save(checkpoint, os.path.join(conf['outdir'], 'best_model_fold' + str(conf.fold) + '.pth'))
+            torch.save(checkpoint, os.path.join(conf['outdir'],
+                       'best_model_fold' + str(conf.fold) + '.pth'))
 
 
-# ---------------------------------------------------------------------------------
-
-
-if __name__=="__main__":
+if __name__ == "__main__":
     conf = get_config()
     set_env(conf)
-    # generate outdir name
     set_outdir(conf)
-    # Set the logger
     set_logger(conf)
     main(conf)
