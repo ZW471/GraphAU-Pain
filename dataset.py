@@ -27,7 +27,7 @@ def default_loader(path):
     return pil_loader(path)
 
 class UNBC(Dataset):
-    def __init__(self, root_path, train=True, fold = 1, transform=None, crop_size = 172, stage=1, loader=default_loader):
+    def __init__(self, root_path, train=True, fold = 1, transform=None, crop_size = 172, stage=1, loader=default_loader, label_path=''):
 
         assert fold>0 and fold <=3, 'The fold num must be restricted from 1 to 3'
         assert stage>0 and stage <=3, 'The stage num must be restricted from 1 to 3'
@@ -38,21 +38,23 @@ class UNBC(Dataset):
         self.crop_size = crop_size
         self.loader = loader
         self.img_folder_path = os.path.join(root_path,'img' if crop_size == 172 else 'resized_img')
+        # Resolve label directory: list/<label_path>/ if set, else top-level list/.
+        list_dir = os.path.join(root_path, 'list', label_path) if label_path else os.path.join(root_path, 'list')
         if self._train:
             # img
-            train_image_list_path = os.path.join(root_path, 'list', 'UNBC_train_img_path_fold' + str(fold) +'.txt')
+            train_image_list_path = os.path.join(list_dir, 'UNBC_train_img_path_fold' + str(fold) +'.txt')
             train_image_list = open(train_image_list_path).readlines()
             # img labels
             if self._stage == 3:
-                train_label_list_path = os.path.join(root_path, 'list', 'UNBC_train_pspi_fold' + str(fold) + '.txt')
+                train_label_list_path = os.path.join(list_dir, 'UNBC_train_pspi_fold' + str(fold) + '.txt')
             else:
-                train_label_list_path = os.path.join(root_path, 'list', 'UNBC_train_label_fold' + str(fold) + '.txt')
+                train_label_list_path = os.path.join(list_dir, 'UNBC_train_label_fold' + str(fold) + '.txt')
             train_label_list = np.loadtxt(train_label_list_path)
 
 
             # AU relation
             if self._stage == 2:
-                au_relation_list_path = os.path.join(root_path, 'list', 'UNBC_train_AU_relation_fold' + str(fold) + '.txt')
+                au_relation_list_path = os.path.join(list_dir, 'UNBC_train_AU_relation_fold' + str(fold) + '.txt')
                 au_relation_list = np.loadtxt(au_relation_list_path)
                 self.data_list = make_dataset(train_image_list, train_label_list, au_relation_list)
             else:
@@ -60,14 +62,14 @@ class UNBC(Dataset):
 
         else:
             # img
-            test_image_list_path = os.path.join(root_path, 'list', 'UNBC_test_img_path_fold' + str(fold) + '.txt')
+            test_image_list_path = os.path.join(list_dir, 'UNBC_test_img_path_fold' + str(fold) + '.txt')
             test_image_list = open(test_image_list_path).readlines()
 
             # img labels
             if self._stage == 3:
-                test_label_list_path = os.path.join(root_path, 'list', 'UNBC_test_pspi_fold' + str(fold) + '.txt')
+                test_label_list_path = os.path.join(list_dir, 'UNBC_test_pspi_fold' + str(fold) + '.txt')
             else:
-                test_label_list_path = os.path.join(root_path, 'list', 'UNBC_test_label_fold' + str(fold) + '.txt')
+                test_label_list_path = os.path.join(list_dir, 'UNBC_test_label_fold' + str(fold) + '.txt')
             test_label_list = np.loadtxt(test_label_list_path)
             self.data_list = make_dataset(test_image_list, test_label_list)
     def __getitem__(self, index):
@@ -174,7 +176,8 @@ class BP4D(Dataset):
 class DISFA(Dataset):
     def __init__(self, root_path, train=True, fold = 1, transform=None, crop_size = 224, stage=1, loader=default_loader):
 
-        assert fold>0 and fold <=3, 'The fold num must be restricted from 1 to 3'
+        assert fold == 'full' or (isinstance(fold, int) and fold>0 and fold <=3), \
+            "The fold must be 1-3 or 'full' for the full DISFA dataset"
         assert stage>0 and stage <=2, 'The stage num must be restricted from 1 to 2'
         self._root_path = root_path
         self._train = train

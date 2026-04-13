@@ -18,7 +18,11 @@ parser = argparse.ArgumentParser(description='PyTorch Training')
 # Datasets
 parser.add_argument('--dataset', default="BP4D", type=str, help="experiment dataset BP4D / DISFA")
 parser.add_argument('--N-fold', default=3, type=int, help="the ratio of train and validation data")
-parser.add_argument('-f','--fold', default=1, type=int, metavar='N', help='the fold of three folds cross-validation ')
+def _fold_type(v):
+    if isinstance(v, str) and v.lower() == 'full':
+        return 'full'
+    return int(v)
+parser.add_argument('-f','--fold', default=1, type=_fold_type, metavar='N', help='the fold of three folds cross-validation (or "full" for full DISFA)')
 
 # Param
 parser.add_argument('-b','--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 128)')
@@ -49,6 +53,16 @@ parser.add_argument('--prediction', default='', type=str, metavar='path', help='
 parser.add_argument('--binary', default=False, type=bool, help='binary classification or not')
 
 parser.add_argument('--ori_unbc', default=False, type=bool, help='use original unbc, otherwise disfa labeled')
+
+parser.add_argument('--label_path', default='', type=str,
+                    help='subdirectory under data/<DATASET>/list/ to load img_path/label/pspi files from '
+                         '(e.g. "original_unbc"). Empty = use top-level list/ files.')
+parser.add_argument('--num_classes', default=None, type=int,
+                    help='override YAML num_classes (AU node count for the GNN head). '
+                         'Useful when training on a label set with a different AU vocabulary '
+                         '(e.g. 10 for original_unbc).')
+parser.add_argument('--neighbor_num', default=None, type=int,
+                    help='override YAML neighbor_num (top-K nearest neighbors in the AU graph).')
 
 # --- Extension flags for SynPAIN / DeltaGraph / demographic evaluation ---
 parser.add_argument('--use_pair_input', action='store_true',
@@ -130,10 +144,16 @@ def get_config():
         raise Exception("Unkown Datsets:",cfg.dataset)
 
     cli_metadata_file = cfg.get('metadata_file', '')
+    cli_num_classes = cfg.get('num_classes', None)
+    cli_neighbor_num = cfg.get('neighbor_num', None)
     cfg.update(datasets_cfg)
-    # CLI --metadata_file overrides YAML value when provided
+    # CLI overrides win over YAML when explicitly provided
     if cli_metadata_file:
         cfg.metadata_file = cli_metadata_file
+    if cli_num_classes is not None:
+        cfg.num_classes = cli_num_classes
+    if cli_neighbor_num is not None:
+        cfg.neighbor_num = cli_neighbor_num
     return cfg
 
 

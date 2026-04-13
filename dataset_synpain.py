@@ -183,3 +183,78 @@ def synpain_collate_fn(batch):
         'ethnicity':  [b['ethnicity']  for b in batch],
         'subject_id': [b['subject_id'] for b in batch],
     }
+
+
+# ---------------------------------------------------------------------------
+# Single-image variant for full-model pain pretraining
+# ---------------------------------------------------------------------------
+
+class SynPAINSingle(Dataset):
+    """SynPAIN single-image dataset.
+
+    Returns ``(img, one_hot_label)`` so it is a drop-in replacement for the
+    UNBC stage-3 loader, allowing ``pain_estimation_full*.py`` to pretrain on
+    SynPAIN with binary pain supervision (no AU labels, no pair input).
+
+    Only the *expressive* frame (`expr_path`) is used; the neutral frame and
+    demographic columns are ignored. The label column is the pain status of
+    the expressive frame, identical to the value the pair-input loader uses.
+    """
+
+    def __init__(
+        self,
+        root_path,
+        split='train',
+        metadata_file='metadata.csv',
+        transform=None,
+        crop_size=224,
+        loader=_pil_loader,
+    ):
+        assert split in ('train', 'val', 'test'), f"Invalid split '{split}'"
+        self.root_path = root_path
+        self.split     = split
+        self.is_train  = (split == 'train')
+        self.crop_size = crop_size
+        self.loader    = loader
+        self._transform = transform  # callable: train uses (img, flip, ox, oy); test uses (img,)
+
+        meta_path = os.path.join(root_path, metadata_file)
+        self.data_list = self._load_metadata(meta_path, split)
+
+    def _load_metadata(self, meta_path, split):
+        if not os.path.exists(meta_path):
+            raise FileNotFoundError(f"SynPAIN metadata not found: {meta_path}")
+        samples = []
+        with open(meta_path, newline='') as f:
+            reader = csv.DictReader(f)
+            fields = reader.fieldnames or []
+            for row in reader:
+                if 'split' in fields and row.get('split', split) != split:
+                    continue
+                samples.append({
+                    'expr_path': row['expr_path'].strip(),
+                    'label':     int(row['label']),
+                })
+        if not samples:
+            raise RuntimeError(f"No samples for split='{split}' in {meta_path}")
+        return samples
+
+    def __getitem__(self, index):
+        s = self.data_list[index]
+        img = self.loader(os.path.join(self.root_path, s['expr_path']))
+        if self.is_train:
+            w, h = img.size
+            offset_y = random.randint(0, max(0, h - self.crop_size))
+            offset_x = random.randint(0, max(0, w - self.crop_size))
+            flip = random.randint(0, 1)
+            if self._transform is not None:
+                img = self._transform(img, flip, offset_x, offset_y)
+        else:
+            if self._transform is not None:
+                img = self._transform(img)
+        # One-hot binary label, matching the UNBC stage-3 pspi format.
+        label = [1.0, 0.0] if s['label'] == 0 else [0.0, 1.0]
+        return img, torch.tensor(label, dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.data_list)

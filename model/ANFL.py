@@ -320,6 +320,70 @@ class FullPictureMEFARG(nn.Module):
         cl = self.fc(cl)
         return cl
 
+class FullPictureMEFARGGeneric(nn.Module):
+    """Backbone-agnostic 3-class UNBC head.
+
+    Drop-in replacement for FullPictureMEFARG that does NOT depend on a hard-coded
+    36 spatial-token output. Works for any backbone/crop_size combination by
+    spatially pooling the backbone features before fusion. R50@172 (S=36) and
+    Swin-B@224 (S=49) both produce a [B, in_channels] global descriptor that is
+    projected to 36-d, modulated by AU activations, and concatenated with the PE
+    descriptor before the final classifier.
+    """
+    def __init__(self, num_classes=8, backbone='swin_transformer_base', neighbor_num=4, metric='dots', binary=False):
+        super(FullPictureMEFARGGeneric, self).__init__()
+        if 'transformer' in backbone:
+            if backbone == 'swin_transformer_tiny':
+                self.backbone = swin_transformer_tiny()
+            elif backbone == 'swin_transformer_small':
+                self.backbone = swin_transformer_small()
+            else:
+                self.backbone = swin_transformer_base()
+            self.in_channels = self.backbone.num_features
+            self.out_channels = self.in_channels // 2
+            self.backbone.head = None
+        elif 'resnet' in backbone:
+            if backbone == 'resnet18':
+                self.backbone = resnet18()
+            elif backbone == 'resnet101':
+                self.backbone = resnet101()
+            else:
+                self.backbone = resnet50()
+            self.in_channels = self.backbone.fc.weight.shape[1]
+            self.out_channels = self.in_channels // 4
+            self.backbone.fc = None
+        else:
+            raise Exception("Error: wrong backbone name: ", backbone)
+
+        self.global_linear = LinearBlock(self.in_channels, self.out_channels)
+        self.head = HeadPEAU(self.out_channels, num_classes, neighbor_num, metric)
+
+        self.fc_au = nn.Linear(num_classes, 36)
+        self.fc_bb = nn.Linear(self.in_channels, 36)
+        self.fc_pe = nn.Linear(512, 36)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        if binary:
+            self.fc = nn.Linear(72, 2)
+        else:
+            self.fc = nn.Linear(72, 3)
+
+    def forward(self, x):
+        bb = self.backbone(x)                # [B, S, in_channels]
+        bb_pool = bb.mean(dim=1)             # [B, in_channels] — spatial pool
+        bb_proj = self.relu(self.fc_bb(bb_pool))  # [B, 36]
+
+        au, pe = self.head(self.global_linear(bb))
+        au = self.relu(self.fc_au(au))       # [B, 36]
+        pe = self.relu(self.fc_pe(pe))       # [B, 36]
+
+        cl = au * bb_proj                    # element-wise modulation [B, 36]
+        cl = self.relu(cl)
+        cl = torch.cat((cl, pe), dim=1)      # [B, 72]
+        cl = self.fc(cl)
+        return cl
+
+
 class FullPictureMEFARGVisualize(nn.Module):
     def __init__(self, num_classes=12, backbone='swin_transformer_base', neighbor_num=4, metric='dots', binary=False):
         super(FullPictureMEFARGVisualize, self).__init__()
@@ -760,3 +824,80 @@ class DeltaMEFARG(nn.Module):
             delta_pooled = pe_expr - pe_neu          # [B, d]
 
         return self.classifier(delta_pooled)         # [B, num_pain_classes]
+
+
+class FullPictureMEFARGAuAux(FullPictureMEFARGGeneric):
+    """Same architecture as FullPictureMEFARGGeneric but returns (pain_logits, au_logits).
+
+    Used by pain_estimation_au_aux.py to train with pain as primary loss and
+    AU classification as auxiliary loss.  Checkpoints are fully interchangeable
+    with FullPictureMEFARGGeneric (identical state_dict keys).
+    """
+    def forward(self, x):
+        bb = self.backbone(x)                        # [B, S, in_channels]
+        bb_pool = bb.mean(dim=1)                     # [B, in_channels]
+        bb_proj = self.relu(self.fc_bb(bb_pool))     # [B, 36]
+
+        au_logits, pe = self.head(self.global_linear(bb))  # au_logits: [B, num_classes]
+        au = self.relu(self.fc_au(au_logits))        # [B, 36]
+        pe = self.relu(self.fc_pe(pe))               # [B, 36]
+
+        cl = au * bb_proj                            # element-wise modulation [B, 36]
+        cl = self.relu(cl)
+        cl = torch.cat((cl, pe), dim=1)              # [B, 72]
+        pain_logits = self.fc(cl)                    # [B, 2 or 3]
+        return pain_logits, au_logits
+
+
+class BackboneOnlyPain(nn.Module):
+    """Backbone-only pain classifier (no AU GNN, no PE branch).
+
+    Used for SynPAIN → UNBC fine-tuning. Rationale: at fine-tune time the
+    AU graph head receives no direct AU supervision (UNBC stage-3 returns
+    only the 3-class pain target), so the pretrained AU GNN nodes — which
+    were trained against SynPAIN's binary pain objective with no semantic
+    AU vocabulary — get warped by pain gradients in unpredictable ways.
+    By dropping the head entirely, the model isolates the question
+    "did SynPAIN pretrain teach the backbone useful pain features?"
+    from "did the AU gating help downstream?".
+
+    Forward pass:
+      x → backbone → [B, S, C] → mean-pool over S → [B, C] → Linear → [B, num_pain_classes]
+
+    Loading a SynPAIN checkpoint (FullPictureMEFARG / FullPictureMEFARGGeneric
+    / DeltaMEFARG) via load_state_dict(strict=False) will populate the
+    backbone weights and ignore the unused head/classifier parameters.
+    """
+    def __init__(self, num_classes=8, backbone='resnet50', neighbor_num=4, metric='dots', binary=False):
+        # The num_classes/neighbor_num/metric kwargs are accepted (and
+        # ignored) so this class is a drop-in replacement that doesn't
+        # require special-casing in the training script.
+        super(BackboneOnlyPain, self).__init__()
+        if 'transformer' in backbone:
+            if backbone == 'swin_transformer_tiny':
+                self.backbone = swin_transformer_tiny()
+            elif backbone == 'swin_transformer_small':
+                self.backbone = swin_transformer_small()
+            else:
+                self.backbone = swin_transformer_base()
+            self.in_channels = self.backbone.num_features
+            self.backbone.head = None
+        elif 'resnet' in backbone:
+            if backbone == 'resnet18':
+                self.backbone = resnet18()
+            elif backbone == 'resnet101':
+                self.backbone = resnet101()
+            else:
+                self.backbone = resnet50()
+            self.in_channels = self.backbone.fc.weight.shape[1]
+            self.backbone.fc = None
+        else:
+            raise Exception("Error: wrong backbone name: ", backbone)
+
+        num_pain_classes = 2 if binary else 3
+        self.classifier = nn.Linear(self.in_channels, num_pain_classes)
+
+    def forward(self, x):
+        bb = self.backbone(x)            # [B, S, C]
+        pooled = bb.mean(dim=1)          # [B, C] — spatial pool
+        return self.classifier(pooled)   # [B, num_pain_classes]

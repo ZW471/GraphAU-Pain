@@ -10,3 +10,4 @@
 .claude
 .venv
 __pycache__
+summary/
